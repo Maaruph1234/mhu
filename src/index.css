@@ -1,0 +1,57 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-white text-slate-700 font-sans antialiased;
+}
+
+::selection {
+  @apply bg-accent/20 text-slate-900;
+}
+
+.container-xl {
+  @apply mx-auto w-full max-w-[1680px] px-6 lg:px-8;
+}
+
+.text-gradient {
+  background: linear-gradient(90deg, #0f172a 0%, #2f46d1 60%, #3d5afe 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.card-surface {
+  @apply rounded-2xl border border-slate-200 bg-white shadow-card;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 rounded-full;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.press-glass {
+  transition: transform 150ms ease, filter 150ms ease, backdrop-filter 150ms ease;
+}
+.press-glass:active {
+  transform: scale(0.96);
+  filter: brightness(1.08);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
