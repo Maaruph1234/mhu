@@ -1,6 +1,7 @@
 import { supabase, extractFunctionErrorMessage } from "./supabaseClient";
 import { isDemoMode } from "./demoMode";
 import { demoStore } from "./demoStore";
+import { TV_PLANS, DATA_PLANS } from "../data/reference";
 import type { TransactionType } from "../types";
 
 /**
@@ -100,4 +101,42 @@ export async function verifySmartcard(provider: string, smartcardNumber: string)
   });
   if (error) throw new Error(await extractFunctionErrorMessage(error));
   return data as { customerName: string; dueDate?: string };
+}
+
+/**
+ * Real VTpass variation codes (data plans / TV bouquets) for a given
+ * network/provider -- fetched live via GET /service-variations rather than
+ * the hardcoded placeholder ids in src/data/reference.ts (those were only
+ * ever meant to build the UI against; VTpass rejects them as invalid).
+ */
+export interface VtpassVariation {
+  code: string;
+  name: string;
+  price: number;
+}
+
+export async function getVariations(
+  service: "data" | "tv-subscription",
+  serviceId: string
+): Promise<VtpassVariation[]> {
+  if (isDemoMode) {
+    await delay(400);
+    if (service === "tv-subscription") {
+      return TV_PLANS.filter((p) => p.provider === serviceId).map((p) => ({
+        code: p.id,
+        name: p.name,
+        price: p.price,
+      }));
+    }
+    return DATA_PLANS.filter((p) => p.network === serviceId).map((p) => ({
+      code: p.id,
+      name: `${p.size} - ${p.validity}`,
+      price: p.price,
+    }));
+  }
+  const { data, error } = await supabase.functions.invoke("vtpass-purchase", {
+    body: { action: "variations", service, serviceId },
+  });
+  if (error) throw new Error(await extractFunctionErrorMessage(error));
+  return (data as { variations: VtpassVariation[] }).variations;
 }

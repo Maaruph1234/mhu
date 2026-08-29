@@ -45,6 +45,12 @@ export const DISCOS: Disco[] = [
   { id: "kano", name: "KEDCO", fullName: "Kano Electric" },
   { id: "ph", name: "PHED", fullName: "Port Harcourt Electric" },
   { id: "ibadan", name: "IBEDC", fullName: "Ibadan Electric" },
+  { id: "aba", name: "APLE", fullName: "Aba Electric" },
+  { id: "benin", name: "BEDC", fullName: "Benin Electric" },
+  { id: "enugu", name: "EEDC", fullName: "Enugu Electric" },
+  { id: "jos", name: "JED", fullName: "Jos Electric" },
+  { id: "kaduna", name: "KAEDCO", fullName: "Kaduna Electric" },
+  { id: "yola", name: "YEDC", fullName: "Yola Electric" },
 ];
 
 export const EXAM_BODIES: ExamBody[] = [
