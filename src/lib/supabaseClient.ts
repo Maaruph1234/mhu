@@ -39,7 +39,7 @@ export async function extractFunctionErrorMessage(error: unknown): Promise<strin
     try {
       const body = await err.context.clone().json();
       // Most functions return { error: "..." } on failure, but
-      // korapay-verify-bvn returns { verified: false, reason: "..." } --
+      // payvessel-verify-bvn returns { verified: false, reason: "..." } --
       // check every field name any edge function actually uses instead of
       // assuming one convention, so this decoder can't silently go blind
       // again the next time a function picks a different key.

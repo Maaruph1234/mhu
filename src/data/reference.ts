@@ -55,10 +55,12 @@ export const DISCOS: Disco[] = [
 
 export const EXAM_BODIES: ExamBody[] = [
   { id: "waec", name: "WAEC", fullName: "WAEC Result Checker PIN", price: 3400 },
-  // NOTE: VTpass does not offer a NECO result-checker product (only WAEC
-  // Registration/Result Checker and JAMB). Purchases for "neco" will return
-  // a clear error from vtpass-purchase rather than silently hit the wrong
-  // product. Remove this entry from the UI, or find an alternate provider
-  // for NECO specifically, before going live.
-  { id: "neco", name: "NECO", fullName: "NECO Result Checker PIN", price: 1300 },
+  // NECO intentionally omitted: VTpass does not offer a NECO result-checker
+  // product (only WAEC Registration/Result Checker and JAMB), so it would
+  // always fail here. Add it back only if you find an alternate provider.
+  // JAMB is a real VTpass product too, but its purchase payload needs a
+  // JAMB profile ID (billersCode) collected from the customer -- a real UI
+  // addition, not a one-line fix -- so it's deliberately left out until
+  // that field is built and its exact payload is confirmed against VTpass's
+  // docs.
 ];

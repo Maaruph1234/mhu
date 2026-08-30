@@ -6,6 +6,7 @@ import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { useAuth } from "../../context/AuthContext";
 import { initials } from "../../lib/format";
+import { IdentityVerificationCard } from "../../components/dashboard/IdentityVerificationCard";
 
 export default function Profile() {
   const { profile, user, signOut, updateProfile } = useAuth();
@@ -66,6 +67,8 @@ export default function Profile() {
           </Button>
         </form>
       </Card>
+
+      <IdentityVerificationCard />
 
       <Button variant="outline" fullWidth icon={<LogOut size={16} />} onClick={handleSignOut}>
         Sign out

@@ -5,7 +5,7 @@ import { AuthLayout } from "../../components/layout/AuthLayout";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { useAuth } from "../../context/AuthContext";
-import * as korapay from "../../lib/korapay";
+import * as payvessel from "../../lib/payvessel";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -31,10 +31,11 @@ export default function Register() {
     setLoading(true);
     try {
       // Identity check happens BEFORE any account is created: the name and
-      // phone number entered here must match what Korapay's BVN Lookup
-      // returns for that BVN, or registration is declined outright. See
-      // supabase/functions/korapay-verify-bvn for the actual matching logic.
-      const { verified, reason, firstName, lastName, phone } = await korapay.verifyBvn({
+      // phone number entered here must match what Payvessel's Enhanced BVN
+      // Verification returns for that BVN, or registration is declined
+      // outright. See supabase/functions/payvessel-verify-bvn for the
+      // actual matching logic.
+      const { verified, reason, firstName, lastName, phone } = await payvessel.verifyBvn({
         bvn: form.bvn,
         firstName: form.firstName,
         lastName: form.lastName,

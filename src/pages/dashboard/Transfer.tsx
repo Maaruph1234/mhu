@@ -8,8 +8,8 @@ import { useWallet } from "../../context/WalletContext";
 import { formatCurrency } from "../../lib/format";
 import { isDemoMode } from "../../lib/demoMode";
 import { demoStore } from "../../lib/demoStore";
-import * as korapay from "../../lib/korapay";
-import type { KorapayBank } from "../../lib/korapay";
+import * as payvessel from "../../lib/payvessel";
+import type { PayvesselBank } from "../../lib/payvessel";
 
 type Tab = "mhu" | "bank";
 
@@ -140,7 +140,7 @@ function TransferToMhuUser({ onDone }: { onDone: () => Promise<void> }) {
 }
 
 function TransferToBank({ onDone }: { onDone: () => Promise<void> }) {
-  const [banks, setBanks] = useState<KorapayBank[]>([]);
+  const [banks, setBanks] = useState<PayvesselBank[]>([]);
   const [loadingBanks, setLoadingBanks] = useState(true);
   const [bankCode, setBankCode] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
@@ -153,7 +153,7 @@ function TransferToBank({ onDone }: { onDone: () => Promise<void> }) {
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    korapay
+    payvessel
       .listBanks()
       .then((list) => {
         setBanks(list);
@@ -169,7 +169,7 @@ function TransferToBank({ onDone }: { onDone: () => Promise<void> }) {
     if (!bankCode || accountNumber.length < 10) return;
     setResolving(true);
     try {
-      const name = await korapay.resolveAccount(bankCode, accountNumber);
+      const name = await payvessel.resolveAccount(bankCode, accountNumber);
       setAccountName(name);
     } catch (err) {
       setError((err as Error).message);
@@ -188,7 +188,7 @@ function TransferToBank({ onDone }: { onDone: () => Promise<void> }) {
     }
     setLoading(true);
     try {
-      const result = await korapay.payoutToBank({
+      const result = await payvessel.payoutToBank({
         bankCode,
         accountNumber,
         accountName,

@@ -1,76 +1,72 @@
-// DEPRECATED: this file is no longer imported by any page. Korapay has been
-// replaced by Payvessel as the wallet-funding/payout/BVN provider for both
-// the website and the Flutter app -- see src/lib/payvessel.ts for the
-// current implementation, which has the identical API surface. This file is
-// left in place (unused) rather than deleted, since this connected project
-// folder doesn't allow file deletion from this tool; delete
-// src/lib/korapay.ts by hand if you want it fully gone.
 import { supabase, extractFunctionErrorMessage } from "./supabaseClient";
 import { isDemoMode } from "./demoMode";
-import type { KorapayAccount } from "../types";
+import type { PayvesselAccount } from "../types";
 
 /**
- * Client-side wrapper around Korapay (see developers.korapay.com) -- the
- * wallet-funding rail. Every MHU Global user gets their own permanent NGN
- * Virtual Bank Account (a real dedicated account number, backed by a bank
- * like Wema/Fidelity) that they transfer money into to fund their in-app
- * wallet, exactly like the "Create Virtual Bank Account" flow documented at
- * developers.korapay.com/docs/virtual-bank-accounts-ngn.
+ * Client-side wrapper around Payvessel (see docs.payvessel.com) -- the
+ * wallet-funding, identity-verification, and bank-payout provider,
+ * replacing Korapay. Every MHU Global user gets their own permanent NGN
+ * Virtual Bank Account (a STATIC reserved account per
+ * docs.payvessel.com/accept-payment/customer-reserved-account) that they
+ * transfer money into to fund their in-app wallet.
  *
- * Two Supabase Edge Functions do the actual API talking, because Korapay's
- * secret key (sk_test_xxx / sk_live_xxx) must never reach the browser:
+ * Three Supabase Edge Functions do the actual API talking, because
+ * Payvessel's api-key/api-secret pair must never reach the browser:
  *
- *   - korapay-create-account: called once per user (after they submit their
- *     BVN, which Korapay requires by regulation for KYC) to create their
- *     Virtual Bank Account via POST /merchant/api/v1/virtual-bank-account,
- *     then stores the returned account in the `korapay_accounts` table.
- *   - korapay-webhook: a public endpoint Korapay calls whenever money lands
- *     in one of those virtual accounts (event "charge.success"). It
- *     verifies the x-korapay-signature header, credits the matching user's
- *     wallet_balance, and logs a transaction. Configure its URL as your
- *     webhook URL in the Kora dashboard (API Configuration tab) -- see
- *     README.md.
+ *   - payvessel-verify-bvn: identity check at registration (see
+ *     Register.tsx) -- public/no-JWT since it runs before signup.
+ *   - payvessel-create-account: called once per user (after they submit
+ *     their BVN) to create their virtual account via Payvessel's
+ *     Create Virtual Account API, then stores it in `payvessel_accounts`.
+ *   - payvessel-webhook: a public endpoint Payvessel calls whenever money
+ *     lands in one of those virtual accounts (event
+ *     "reserved_account.credit"), or a bank payout resolves (event
+ *     "transfer.success"/"transfer.failed"/"transfer.reversed"). Configure
+ *     its URL as your webhook URL in the Payvessel dashboard.
+ *   - payvessel-payout: "Transfer to bank" -- listing banks, resolving an
+ *     account name, and initiating the actual payout.
  *
  * In demo mode there's no real account to fetch or create -- FundWallet.tsx
  * shows a fabricated bank account instead, so this module is simply not
  * called.
  */
 
-export interface CreateKorapayAccountInput {
+export interface CreatePayvesselAccountInput {
   bvn: string;
   nin?: string;
 }
 
-export async function getMyAccount(): Promise<KorapayAccount | null> {
+export async function getMyAccount(): Promise<PayvesselAccount | null> {
   if (isDemoMode) return null;
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return null;
   const { data, error } = await supabase
-    .from("korapay_accounts")
+    .from("payvessel_accounts")
     .select("*")
     .eq("user_id", user.id)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return data as KorapayAccount | null;
+  return data as PayvesselAccount | null;
 }
 
-export async function createAccount(input: CreateKorapayAccountInput): Promise<KorapayAccount> {
-  const { data, error } = await supabase.functions.invoke("korapay-create-account", {
+export async function createAccount(input: CreatePayvesselAccountInput): Promise<PayvesselAccount> {
+  const { data, error } = await supabase.functions.invoke("payvessel-create-account", {
     body: input,
   });
   if (error) throw new Error(await extractFunctionErrorMessage(error));
-  return data as KorapayAccount;
+  return data as PayvesselAccount;
 }
 
 /**
  * BVN identity check used at registration -- the name and phone number
- * someone types on the signup form must match what Korapay's BVN Lookup API
- * (developers.korapay.com/docs/nigeria-bvn) returns for that BVN, or
- * registration is declined before an account is ever created. Called
- * *before* supabase.auth.signUp(), so this hits a public/no-JWT edge
- * function (korapay-verify-bvn) rather than one gated behind a session.
+ * someone types on the signup form must match what Payvessel's Enhanced BVN
+ * Verification API (docs.payvessel.com/identity-verification/enhanced-bvn-
+ * verification) returns for that BVN, or registration is declined before an
+ * account is ever created. Called *before* supabase.auth.signUp(), so this
+ * hits a public/no-JWT edge function (payvessel-verify-bvn) rather than one
+ * gated behind a session.
  */
 export interface VerifyBvnInput {
   bvn: string;
@@ -94,7 +90,7 @@ export async function verifyBvn(input: VerifyBvnInput): Promise<VerifyBvnResult>
     await new Promise((r) => setTimeout(r, 700));
     return { verified: true, firstName: input.firstName, lastName: input.lastName, phone: input.phone };
   }
-  const { data, error } = await supabase.functions.invoke("korapay-verify-bvn", {
+  const { data, error } = await supabase.functions.invoke("payvessel-verify-bvn", {
     body: input,
   });
   if (error) throw new Error(await extractFunctionErrorMessage(error));
@@ -103,11 +99,10 @@ export async function verifyBvn(input: VerifyBvnInput): Promise<VerifyBvnResult>
 
 /**
  * "Transfer to bank" -- sending money OUT of the wallet to an external
- * Nigerian bank account, via Korapay's Payout API (a different product
- * from the virtual-account funding above). Routed through the
- * `korapay-payout` Edge Function for the same secret-key reasons.
+ * Nigerian bank account, via Payvessel's Transfers API. Routed through the
+ * `payvessel-payout` Edge Function for the same secret-key reasons.
  */
-export interface KorapayBank {
+export interface PayvesselBank {
   name: string;
   code: string;
 }
@@ -126,7 +121,7 @@ export interface BankPayoutResult {
   message: string;
 }
 
-export async function listBanks(): Promise<KorapayBank[]> {
+export async function listBanks(): Promise<PayvesselBank[]> {
   if (isDemoMode) {
     return [
       { name: "Access Bank", code: "044" },
@@ -135,11 +130,11 @@ export async function listBanks(): Promise<KorapayBank[]> {
       { name: "Zenith Bank", code: "057" },
     ];
   }
-  const { data, error } = await supabase.functions.invoke("korapay-payout", {
+  const { data, error } = await supabase.functions.invoke("payvessel-payout", {
     body: { action: "banks" },
   });
   if (error) throw new Error(await extractFunctionErrorMessage(error));
-  return (data as { banks: KorapayBank[] }).banks;
+  return (data as { banks: PayvesselBank[] }).banks;
 }
 
 export async function resolveAccount(bankCode: string, accountNumber: string): Promise<string> {
@@ -147,7 +142,7 @@ export async function resolveAccount(bankCode: string, accountNumber: string): P
     await new Promise((r) => setTimeout(r, 500));
     return "Chidinma Okafor";
   }
-  const { data, error } = await supabase.functions.invoke("korapay-payout", {
+  const { data, error } = await supabase.functions.invoke("payvessel-payout", {
     body: { action: "resolve", bankCode, accountNumber },
   });
   if (error) throw new Error(await extractFunctionErrorMessage(error));
@@ -175,7 +170,7 @@ export async function payoutToBank(input: BankPayoutInput): Promise<BankPayoutRe
     );
     return { success: true, reference, message: "Bank transfer successful" };
   }
-  const { data, error } = await supabase.functions.invoke("korapay-payout", {
+  const { data, error } = await supabase.functions.invoke("payvessel-payout", {
     body: input,
   });
   if (error) throw new Error(await extractFunctionErrorMessage(error));

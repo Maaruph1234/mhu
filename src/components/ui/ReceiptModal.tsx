@@ -10,7 +10,8 @@ import { formatCurrency, formatDate } from "../../lib/format";
 // so they don't add weight to the main bundle for people who never open a
 // receipt.
 const isCredit = (type: Transaction["type"]) =>
-  type === "transfer_in" || type === "fund_wallet" || type === "referral_bonus";
+  type === "transfer_in" || type === "fund_wallet" || type === "referral_bonus" ||
+  type === "card_withdraw" || type === "card_terminate";
 
 const statusMeta: Record<Transaction["status"], { label: string; icon: typeof CheckCircle2; className: string }> = {
   successful: { label: "Successful", icon: CheckCircle2, className: "text-emerald-500 bg-emerald-50" },

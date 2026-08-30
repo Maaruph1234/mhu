@@ -1,11 +1,20 @@
 # MHU Global — Web App
 
 A React + TypeScript + Tailwind web app for MHU Global: a wallet that covers
-airtime, data, TV subscriptions, electricity bills, exam pins and instant
-peer-to-peer transfers. Visual style is a dark fintech theme inspired by
-chain.com. Backend: Supabase (auth, database, edge functions, and built-in
-email OTP for signup verification), VTpass (airtime/data/TV/electricity/
-exam-pin fulfillment), Korapay (wallet funding via bank transfer).
+airtime, data, TV subscriptions, electricity bills, exam pins, instant
+peer-to-peer transfers, USD virtual cards, extra ID verification, eSIM data
+packages, and flight booking. Visual style is a light fintech theme.
+Backend: Supabase (auth, database, edge functions, and built-in email OTP
+for signup verification), VTpass (airtime/data/TV/electricity/exam-pin
+fulfillment), Payvessel (wallet funding, bank payouts, BVN/identity
+verification, USD virtual card issuing, eSIM, and flight booking — Payvessel
+replaced Korapay and Monnify as of this revision; see the "Payvessel"
+sections below for the full API surface now in use).
+
+This app shares ONE Supabase project with a companion Flutter mobile app
+("MHU Super App"). Every Payvessel edge function listed below is deployed
+ONCE and used by both apps — the Flutter app's own README doesn't repeat
+these deployment steps, it just points back here.
 
 This is a working scaffold with real integration code, not a finished
 production app — the sections below list exactly what to fill in before it
@@ -130,116 +139,114 @@ in case that connectivity issue gets resolved later and it's worth
 revisiting. VTpass replaces it as the active integration; none of the
 5 VTU pages import from `lib/provibill` anymore.
 
-### Wallet funding — Korapay
-VTpass only handles outgoing bill payments — it has no concept of depositing
-money into a wallet. Wallet funding is wired to Korapay (see
-developers.korapay.com), using their NGN Virtual Bank Account product. Every
-endpoint/field/webhook shape below is confirmed directly against Korapay's
-own docs, not guessed:
-- Run the schema additions in `supabase/schema.sql` — adds the new
-  `korapay_accounts` table (1:1 with `users`).
-- Set Supabase function secrets:
-  ```bash
-  supabase secrets set KORAPAY_SECRET_KEY=sk_test_xxx KORAPAY_BASE_URL=https://api.korapay.com KORAPAY_BANK_CODE=000
-  ```
-  `KORAPAY_BANK_CODE=000` is required while using test/sandbox keys — switch
-  to a real bank code (e.g. `035` Wema, `070` Fidelity) once you move to
-  live keys. Korapay uses the same base URL for both test and live; the
-  `sk_test_`/`sk_live_` prefix on your secret key determines the mode.
-- Deploy both new edge functions:
-  `supabase functions deploy korapay-create-account` and
-  `supabase functions deploy korapay-webhook --no-verify-jwt` (the
-  `--no-verify-jwt` flag matters — Korapay calls the webhook directly, with
-  no Supabase user session attached).
-- In your Kora dashboard, go to **Settings > API Configuration** and set the
-  Webhook URL to your deployed `korapay-webhook` function's URL. Unlike the
-  abandoned Xpress Wallet attempt, no secret-in-query-param scheme is
-  needed — Korapay signs every webhook with an `x-korapay-signature` header
-  (HMAC-SHA256 of the `data` object, using your secret key), which
-  `korapay-webhook/index.ts` verifies before doing anything.
-- On first visit to Fund Wallet, a user submits their BVN once (Korapay
-  requires BVN or NIN for KYC on every virtual account, by regulation) —
-  `korapay-create-account` calls Korapay's Create Virtual Bank Account API
-  and stores the returned account. From then on they see their real
-  dedicated account number instead of a placeholder, and transfers to it
-  credit their wallet automatically via the webhook (event
-  `charge.success`).
-- **Testing on sandbox:** use test BVN `22222222222` (see Korapay's
-  Testing Your Integration doc). To simulate a real bank transfer landing
-  in a sandbox virtual account without actually sending money, POST to
-  `https://api.korapay.com/merchant/api/v1/virtual-bank-account/sandbox/credit`
-  with `{ account_number, currency: "NGN", amount }` using your test secret
-  key — this triggers a real `charge.success` webhook to your deployed
-  function, so it's the fastest way to confirm the whole flow end-to-end.
-- Korapay defaults to a 50-virtual-account limit per merchant; email
-  support@korapay.com to raise it before real users start signing up at
-  volume.
+### Payvessel — wallet funding, payouts, BVN check, virtual cards, identity verification, eSIM, flights
+Payvessel (docs.payvessel.com) is now the provider for everything that used
+to be split across Korapay (funding/payout/BVN) and Monnify (the Flutter
+app's old funding rail), PLUS four brand-new features not in the original
+scope. Every endpoint/field/webhook shape below is confirmed directly
+against Payvessel's own docs, not guessed. All Payvessel functions share
+three base secrets:
+```bash
+supabase secrets set PAYVESSEL_API_KEY=PVTESTKEY-xxx PAYVESSEL_SECRET=PVTESTSECRET-xxx PAYVESSEL_BASE_URL=https://sandbox.payvessel.com
+```
+Switch `PAYVESSEL_BASE_URL` to `https://api.payvessel.com` once you move to
+live keys.
 
-### Transfer to bank — Korapay Payout API
-The Transfer page has two tabs: "Transfer to MHU user" (the original
-wallet-to-wallet `transfer_funds` RPC, unchanged) and "Transfer to bank" —
-sending money OUT of a user's wallet to any external Nigerian bank account,
-via a different Korapay product than the funding side above. Confirmed
-directly against developers.korapay.com/docs/payout-via-api:
-- No schema changes needed — reuses the existing `transactions` table (a
-  `bank_transfer_out` row is inserted with status `pending` at initiation).
-- Uses the same `KORAPAY_SECRET_KEY`/`KORAPAY_BASE_URL` secrets as the
-  funding side — no new secrets to set.
-- Deploy the new edge function: `supabase functions deploy korapay-payout`.
-- Flow: `korapay-payout/index.ts` lists Nigerian banks (`action: "banks"`),
-  resolves an account number to a name before paying (`action: "resolve"`,
-  shown in the UI so the user can confirm who they're sending to), then
-  calls Korapay's `/transactions/disburse` endpoint. The wallet is debited
-  immediately (optimistically) and the transaction sits as `pending`.
-- `korapay-webhook/index.ts` was extended to also handle `transfer.success`
-  / `transfer.failed` events (on top of the `charge.success` funding event
-  it already handled) — these resolve that `pending` row to `successful`,
-  or to `failed` **and automatically refund the wallet**, since Korapay's
-  own docs explicitly warn that a payout API response of "processing" is
-  not a guarantee of final outcome — only the webhook is authoritative.
-- **Sandbox test bank accounts** (per Korapay's Testing Your Integration
-  doc): bank code `044` (Access Bank), `033` (UBA), or `058` (GTCO) with
-  account number `0000000000` simulate a successful payout in test mode.
+**Wallet funding (virtual bank account).** `payvessel-create-account`
+creates a permanent NGN virtual account per user (Payvessel's
+`customerReservedAccount` product), stored in the `payvessel_accounts`
+table. Also needs `PAYVESSEL_BUSINESS_ID` (from your Payvessel dashboard,
+separate from the API key/secret):
+```bash
+supabase secrets set PAYVESSEL_BUSINESS_ID=xxx
+supabase functions deploy payvessel-create-account
+```
+BVN is mandatory for a STATIC account, same regulatory requirement Korapay
+had. `payvessel-verify-bvn` (deploy with `--no-verify-jwt`, since it runs
+before the user has a session) gates registration the same way the old
+Korapay BVN check did, using Payvessel's Enhanced BVN Verification.
 
-### Registration identity check — Korapay BVN Lookup
-Register.tsx now collects first name, last name, phone, and BVN, and declines
-the signup outright if they don't match Korapay's BVN records — no Supabase
-Auth account is created until the check passes. Confirmed directly against
-developers.korapay.com/docs/nigeria-bvn:
-- No schema changes, and nothing is persisted — the BVN and Korapay's
-  response are used only for the one pass/fail check, same policy as
-  `korapay-create-account`.
-- Uses the same `KORAPAY_SECRET_KEY`/`KORAPAY_BASE_URL` secrets as every
-  other Korapay function.
-- Deploy: `supabase functions deploy korapay-verify-bvn --no-verify-jwt` —
-  the `--no-verify-jwt` flag matters here too: this runs *before* the user
-  has a Supabase session (it's the gate deciding whether to create one).
-- Flow: `korapay-verify-bvn/index.ts` calls Korapay's BVN Lookup
-  (`POST /merchant/api/v1/identities/ng/bvn`) with `validation.first_name` /
-  `validation.last_name`, which comes back with `true`/`false` match flags.
-  Korapay doesn't validate phone number itself, so the function separately
-  compares the BVN record's own `phone_number` against what was typed,
-  normalized the same way `normalize_ng_phone()` already does for transfers.
-  Registration is only allowed to continue if first name, last name, *and*
-  phone all match.
-- **This requires Korapay's Identity product to be enabled on your account**
-  (a separate toggle from Payments/Payouts) — if every attempt fails with an
-  auth/permission error, that's an account setting on the Kora dashboard,
-  the same class of issue as VTpass's per-product whitelisting.
-- **Testing on sandbox:** only BVN `22222222222` resolves to real test data
-  — first name `Trevor`, last name `Mandela`, phone `08031234567` (per
-  Korapay's Testing Your Integration doc). Use those exact values to test a
-  successful registration, and any mismatched name/phone with the same BVN
-  to test a decline. BVN `00000000000` is the documented invalid case.
+**Payouts (transfer to bank).** `payvessel-payout` lists banks, resolves an
+account number to a name, and disburses — same three-action shape the old
+`korapay-payout` had. Deploy: `supabase functions deploy payvessel-payout`.
+
+**Webhooks.** `payvessel-webhook` (deploy with `--no-verify-jwt`) handles
+`reserved_account.credit` (wallet funding), `transfer.success` /
+`transfer.failed` / `transfer.reversed` (payout resolution, with automatic
+wallet refund on failure), and the virtual-card issuing events described
+below. Signature: HMAC-SHA512 of the raw body using your secret as the key;
+set the deployed function's URL as your webhook URL in the Payvessel
+dashboard. **Note:** Payvessel's own docs show the verification header via
+Django's internal `HTTP_PAYVESSEL_HTTP_SIGNATURE` name rather than the
+literal wire header — `payvessel-webhook/index.ts` checks a few plausible
+real header names defensively and logs all received header names if none
+match, so a mismatch is diagnosable from the function logs on your first
+real webhook delivery rather than failing silently.
+
+**Virtual USD cards (issuing).** New feature — a user can create a
+Visa/Mastercard USD card (full KYC per card: BVN, NIN, DOB, address, an ID
+photo), fund/withdraw it against their own NGN wallet, freeze/unfreeze,
+terminate, and view its transaction history. Payvessel issues every card
+under ONE shared business account with no per-customer scoping on their
+side, so `payvessel-cards/index.ts` and the `virtual_cards` table are what
+make per-user isolation possible — read that function's header comment
+before touching it. Deploy:
+```bash
+supabase secrets set PAYVESSEL_USD_NGN_RATE=1500
+supabase functions deploy payvessel-cards
+```
+`PAYVESSEL_USD_NGN_RATE` is a manually maintained NGN-per-USD number, NOT a
+live FX feed — there's no exchange-rate API wired in. Update it
+periodically; the fallback bakes in a margin over the interbank rate at the
+time this was written (check a source like xe.com or the CBN rate before
+relying on the default for real money). You'll also need to fund your
+Payvessel **business USD wallet** from their dashboard before any card can
+actually be funded — that's separate money from the NGN wallet used for
+funding/payouts.
+
+**Extra ID verification.** New feature, on the Profile page — a user can
+verify NIN (enhanced), driver's license, voter's card, or international
+passport, stored in `identity_verifications` (one row per user per doc
+type). **Every check costs Payvessel ~₦25 from OUR business wallet, even
+when the document isn't found** — `payvessel-identity/index.ts` charges a
+flat fee from the user's own wallet to cover that (and prevent abuse), only
+when Payvessel actually processed the request. Deploy:
+```bash
+supabase secrets set IDENTITY_VERIFICATION_FEE_NGN=150
+supabase functions deploy payvessel-identity
+```
+
+**eSIM data packages.** New feature — browse regions/packages and buy an
+eSIM, tracked in `esim_orders`. Payvessel's package list already returns
+`price_naira` directly, so no exchange-rate guessing is needed here (unlike
+cards). Deploy: `supabase functions deploy payvessel-esim`.
+
+**Flight booking.** New feature — search flights (one-way, round-trip, or
+multi-city, up to 5 legs), pick a cabin class, lock in a quote, and book a
+multi-passenger itinerary (adults/children/infants, each with their own
+passenger-details form), tracked in `flight_quotes` (so the exact priced
+total Payvessel already validated at quote time is what gets charged,
+never a client-supplied number) and `flight_orders`. Payvessel's "List
+Flight Orders" endpoint is business-wide the same way card listing is, so
+`flight_orders`/`flight_quotes` provide the same per-user isolation
+`virtual_cards` does. Deploy: `supabase functions deploy payvessel-flight`
+(the quote action's response also now includes `airlineLogoUrl`, so
+redeploy if you're updating from an older version of this function).
+
+### Korapay / Monnify (superseded, left in place unused)
+`src/lib/korapay.ts`, the four `korapay-*` edge functions, and the Flutter
+app's `monnify-payment` function are all replaced by Payvessel above and
+have been turned into `410`-returning stubs (or, for `korapay.ts`, marked
+deprecated in a header comment) rather than deleted, since delete access to
+this codebase isn't available from this tool. Nothing in either app calls
+them anymore. Safe to delete the whole files/folders by hand if you want
+them fully gone, and run `supabase functions delete <name>` to remove the
+stubs from the deployed project too.
 
 ### Xpress Wallet (not currently used — left in place, unused)
-Xpress Wallet (Providus Bank) was the original wallet-funding attempt, but
-its Postman-collection-based field names and webhook payload shape were
-never confirmed against a real account before the project moved to Korapay.
-`src/lib/xpressWallet.ts` and `supabase/functions/xpresswallet-create-wallet/`
-+ `xpresswallet-webhook/` are left in the codebase, unused, in case it's
-worth revisiting. `FundWallet.tsx` no longer imports from `lib/korapay`'s
-predecessor — it uses Korapay exclusively.
+Xpress Wallet (Providus Bank) was an early wallet-funding attempt on the
+website, abandoned before Korapay (and now Payvessel). `src/lib/xpressWallet.ts`
+is left in the codebase, unused.
 
 ### App Store / Play Store badges
 - Set `VITE_APP_STORE_URL` and `VITE_PLAY_STORE_URL` in `.env` once the
@@ -249,28 +256,35 @@ predecessor — it uses Korapay exclusively.
 
 ```
 src/
-  components/ui/       Buttons, cards, inputs, wallet card, store badges, etc.
-  components/layout/   Marketing nav/footer, dashboard sidebar, auth layout
-  context/              AuthContext (Supabase auth), WalletContext (balance + transactions)
-  lib/                  supabaseClient, smsala.ts, vtpass.ts, provibill.ts, korapay.ts, xpressWallet.ts, format.ts (client-side service wrappers -- provibill.ts/xpressWallet.ts unused, kept for reference)
-  data/reference.ts     Static network/TV/disco/exam-body reference data (placeholders — see above)
-  pages/marketing/      Landing page
-  pages/auth/           Login, Register, OTP verification, Forgot password
-  pages/dashboard/      Overview, Fund, Transfer, Airtime, Data, TV, Electricity, Exam Pins, Transactions, Referrals, Profile
+  components/ui/          Buttons, cards, inputs, wallet card, store badges, etc.
+  components/dashboard/   IdentityVerificationCard (Profile page section)
+  components/layout/      Marketing nav/footer, dashboard sidebar, auth layout
+  context/                 AuthContext (Supabase auth), WalletContext (balance + transactions)
+  lib/                     supabaseClient, smsala.ts, vtpass.ts, provibill.ts, korapay.ts (superseded),
+                           payvessel.ts, virtualCards.ts, identityVerification.ts, esim.ts, flights.ts,
+                           xpressWallet.ts, format.ts (client-side service wrappers --
+                           provibill.ts/korapay.ts/xpressWallet.ts unused, kept for reference)
+  data/reference.ts        Static network/TV/disco/exam-body reference data (placeholders — see above)
+  pages/marketing/         Landing page
+  pages/auth/              Login, Register, OTP verification, Forgot password
+  pages/dashboard/         Overview, Fund, Transfer, Airtime, Data, TV, Electricity, Exam Pins,
+                           VirtualCard, Esim, FlightBooking, Transactions, Referrals, Profile
 supabase/
-  schema.sql             Tables, RLS policies, transfer_funds RPC
-  functions/              Edge functions that hold the real VTpass/Smsala/Korapay secret keys (plus unused Provibill/Xpress Wallet ones)
+  schema.sql               Tables, RLS policies, transfer_funds RPC
+  functions/                Edge functions that hold the real VTpass/Smsala/Payvessel secret keys
+                           (plus unused Provibill/Xpress Wallet/Korapay ones, the latter now 410 stubs)
 ```
 
-## 4. Why VTpass/Korapay/Smsala calls go through Supabase Edge Functions
+## 4. Why VTpass/Payvessel/Smsala calls go through Supabase Edge Functions
 
-VTpass, Korapay, and Smsala all require secret credentials. Secrets must
+VTpass, Payvessel, and Smsala all require secret credentials. Secrets must
 never ship in frontend JavaScript (anyone can open dev tools and read
-them), so `src/lib/vtpass.ts`, `src/lib/korapay.ts`, and `src/lib/smsala.ts`
-never call those APIs directly — they call a Supabase Edge Function
-(`supabase.functions.invoke(...)`), and the edge function (which runs
-server-side, holding the real secrets) makes the actual VTpass/Korapay/
-Smsala request.
+them), so `src/lib/vtpass.ts`, `src/lib/payvessel.ts` (and its
+`virtualCards.ts`/`identityVerification.ts`/`esim.ts`/`flights.ts`
+siblings), and `src/lib/smsala.ts` never call those APIs directly — they
+call a Supabase Edge Function (`supabase.functions.invoke(...)`), and the
+edge function (which runs server-side, holding the real secrets) makes the
+actual VTpass/Payvessel/Smsala request.
 
 ## 5. Build
 

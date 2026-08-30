@@ -35,8 +35,10 @@ export interface XpressWalletAccount {
 }
 
 // Not currently used (Xpress Wallet connectivity was never confirmed) --
-// Korapay is the active wallet-funding provider. Kept here in case Xpress
-// Wallet gets revisited later; nothing in the app references this type.
+// Korapay was the active wallet-funding provider, replaced by Payvessel
+// (see PayvesselAccount below). Kept here in case either Korapay or Xpress
+// Wallet gets revisited later; nothing in the app references this type
+// anymore.
 export interface KorapayAccount {
   id: string;
   user_id: string;
@@ -48,6 +50,193 @@ export interface KorapayAccount {
   status: string;
   created_at: string;
   updated_at: string;
+}
+
+// Payvessel is the active wallet-funding provider (see src/lib/payvessel.ts
+// and supabase/functions/payvessel-*). Matches the `payvessel_accounts`
+// table in supabase/schema.sql.
+export interface PayvesselAccount {
+  id: string;
+  user_id: string;
+  account_number: string;
+  account_name: string;
+  bank_name: string;
+  bank_code: string;
+  tracking_reference: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Payvessel-issued USD virtual card (Visa/Mastercard). Matches the
+// `virtual_cards` table in supabase/schema.sql -- deliberately has no
+// card_number/cvv columns; those are fetched live from
+// payvessel-cards' "get" action only when the user asks to view them, never
+// persisted. See supabase/functions/payvessel-cards/index.ts for why this
+// table exists at all (Payvessel has no per-customer card list of its own).
+export interface VirtualCard {
+  id: string;
+  user_id: string;
+  payvessel_card_id: string;
+  brand: string;
+  currency: string;
+  card_name: string | null;
+  masked_pan: string;
+  status: "PENDING" | "ACTIVE" | "FROZEN" | "TERMINATED" | "FAILED";
+  balance_usd: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Full card detail returned only from an explicit "reveal" request --
+// never stored in state longer than the viewing session.
+export interface VirtualCardDetail extends Omit<VirtualCard, "status"> {
+  status: string;
+  expiry?: string;
+  card_number?: string;
+  cvv?: string;
+}
+
+export interface VirtualCardTransaction {
+  id: string;
+  card_id: string;
+  ref_id?: string;
+  amount: string;
+  currency: string;
+  merchant?: string;
+  entry: "DEBIT" | "CREDIT";
+  status: string;
+  type: string;
+  description?: string;
+  fee?: string;
+  date: string;
+}
+
+export type IdentityDocType = "nin" | "drivers_license" | "voters_card" | "passport";
+
+// Matches the `identity_verifications` table in supabase/schema.sql -- one
+// row per user per document type, written only by the payvessel-identity
+// edge function. Never includes a photo (deliberately not stored, see that
+// table's comment).
+export interface IdentityVerification {
+  id: string;
+  user_id: string;
+  doc_type: IdentityDocType;
+  doc_number: string;
+  verified_name: string | null;
+  status: string;
+  details: Record<string, unknown>;
+  created_at: string;
+}
+
+// Matches Payvessel's PackageSchema (esim/list-packages) -- passed through
+// mostly as-is rather than re-typed field by field.
+export interface EsimPackage {
+  package_code: string;
+  name: string;
+  currency_code: string;
+  price_usd: number;
+  price_naira: number | null;
+  volume_bytes: number;
+  duration: number;
+  duration_unit: string;
+  location: string;
+  description: string | null;
+  favorite?: boolean | null;
+  speed?: string | null;
+}
+
+export interface EsimRegion {
+  code: string;
+  name: string;
+  sub_locations?: EsimRegion[];
+}
+
+// Matches the `esim_orders` table in supabase/schema.sql.
+export interface EsimOrder {
+  id: string;
+  user_id: string;
+  payvessel_order_id: string;
+  reference: string;
+  package_code: string;
+  package_name: string;
+  location: string;
+  amount_ngn: number;
+  status: "pending" | "processing" | "completed" | "failed";
+  qr_code_url: string | null;
+  iccid: string | null;
+  activation_details: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface FlightAirport {
+  airport_code: string;
+  airport_name: string;
+  city_country: string;
+  city: string;
+  country: string;
+}
+
+export interface FlightPricing {
+  currency_code: string;
+  base_price: number;
+  service_charge: number;
+  total_amount: number;
+  wallet_reward_on_success: number;
+  price_status: "preview" | "final";
+}
+
+export interface FlightSearchOption {
+  selection_token: string;
+  pricing: FlightPricing;
+  airline_code: string | null;
+  airline_name: string | null;
+  airline_logo_url: string | null;
+  is_refundable: boolean | null;
+  journeys: Array<{
+    departure_airport_code: string | null;
+    departure_airport_name: string | null;
+    arrival_airport_code: string | null;
+    arrival_airport_name: string | null;
+    departure_datetime: string | null;
+    arrival_datetime: string | null;
+    stop_count: number | null;
+    trip_duration: string | null;
+  }>;
+}
+
+export interface FlightQuote {
+  id: string;
+  airlineName: string | null;
+  airlineLogoUrl?: string | null;
+  journeys: FlightSearchOption["journeys"];
+  pricing: FlightPricing;
+  expiresAt: string;
+  amountNgn: number;
+}
+
+export interface FlightPassengerInput {
+  passenger_type: "Adult" | "Child" | "Infant";
+  first_name: string;
+  last_name: string;
+  middle_name?: string;
+  date_of_birth?: string;
+  email?: string;
+  phone_number?: string;
+  gender?: string;
+}
+
+// Matches the `flight_orders` table in supabase/schema.sql.
+export interface FlightOrder {
+  id: string;
+  user_id: string;
+  payvessel_order_id: string;
+  merchant_reference: string;
+  route_summary: string;
+  amount_ngn: number;
+  status: "pending" | "processing" | "completed" | "failed" | "cancelled";
+  passengers: FlightPassengerInput[];
+  created_at: string;
 }
 
 // Not a real table — synthesized in WalletContext from `users.wallet_balance`
@@ -68,7 +257,15 @@ export type TransactionType =
   | "tv"
   | "electricity"
   | "exam_pin"
-  | "referral_bonus";
+  | "referral_bonus"
+  | "card_create"
+  | "card_fund"
+  | "card_withdraw"
+  | "card_terminate"
+  | "card_fee"
+  | "identity_verification"
+  | "esim_purchase"
+  | "flight_booking";
 
 export type TransactionStatus = "pending" | "successful" | "failed";
 

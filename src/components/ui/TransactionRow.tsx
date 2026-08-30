@@ -1,5 +1,5 @@
 import {
-  Smartphone, Wifi, Tv, Zap, GraduationCap, Send, ArrowDownLeft, Gift, Wallet,
+  Smartphone, Wifi, Tv, Zap, GraduationCap, Send, ArrowDownLeft, Gift, Wallet, CreditCard, ShieldCheck, Signal, Plane,
 } from "lucide-react";
 import type { Transaction } from "../../types";
 import { formatCurrency, formatDate } from "../../lib/format";
@@ -16,6 +16,14 @@ const iconMap: Record<Transaction["type"], typeof Smartphone> = {
   transfer_in: ArrowDownLeft,
   referral_bonus: Gift,
   fund_wallet: Wallet,
+  card_create: CreditCard,
+  card_fund: CreditCard,
+  card_withdraw: CreditCard,
+  card_terminate: CreditCard,
+  card_fee: CreditCard,
+  identity_verification: ShieldCheck,
+  esim_purchase: Signal,
+  flight_booking: Plane,
 };
 
 const toneMap: Record<Transaction["status"], "success" | "pending" | "failed"> = {
@@ -24,7 +32,9 @@ const toneMap: Record<Transaction["status"], "success" | "pending" | "failed"> =
   failed: "failed",
 };
 
-const isCredit = (type: Transaction["type"]) => type === "transfer_in" || type === "fund_wallet" || type === "referral_bonus";
+const isCredit = (type: Transaction["type"]) =>
+  type === "transfer_in" || type === "fund_wallet" || type === "referral_bonus" ||
+  type === "card_withdraw" || type === "card_terminate";
 
 export function TransactionRow({ tx, onClick }: { tx: Transaction; onClick?: () => void }) {
   const Icon = iconMap[tx.type] ?? Wallet;

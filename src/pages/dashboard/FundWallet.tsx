@@ -5,14 +5,14 @@ import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { useAuth } from "../../context/AuthContext";
 import { isDemoMode } from "../../lib/demoMode";
-import * as korapay from "../../lib/korapay";
-import type { KorapayAccount } from "../../types";
+import * as payvessel from "../../lib/payvessel";
+import type { PayvesselAccount } from "../../types";
 
 export default function FundWallet() {
   const { profile } = useAuth();
   const [copied, setCopied] = useState(false);
 
-  const [account, setAccount] = useState<KorapayAccount | null>(null);
+  const [account, setAccount] = useState<PayvesselAccount | null>(null);
   const [loadingAccount, setLoadingAccount] = useState(!isDemoMode);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
@@ -23,7 +23,7 @@ export default function FundWallet() {
       setLoadingAccount(false);
       return;
     }
-    korapay
+    payvessel
       .getMyAccount()
       .then(setAccount)
       .finally(() => setLoadingAccount(false));
@@ -57,7 +57,7 @@ export default function FundWallet() {
     }
     setCreating(true);
     try {
-      const created = await korapay.createAccount({ bvn });
+      const created = await payvessel.createAccount({ bvn });
       setAccount(created);
     } catch (err) {
       setCreateError((err as Error).message);

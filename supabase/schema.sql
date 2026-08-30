@@ -75,6 +75,197 @@ create policy "Users can view own korapay account" on public.korapay_accounts
 -- (used inside the korapay-create-account and korapay-webhook edge
 -- functions) can write to this table.
 
+-- Payvessel virtual bank accounts -- replaces korapay_accounts as the
+-- ACTIVE wallet-funding integration (Payvessel replaced Korapay). Same
+-- shape/RLS policy as korapay_accounts above; korapay_accounts is left in
+-- place unused rather than dropped, in case any historical rows need to be
+-- referenced later.
+create table if not exists public.payvessel_accounts (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid unique not null references public.users(id) on delete cascade,
+  account_number text not null,
+  account_name text not null,
+  bank_name text not null,
+  bank_code text not null,
+  tracking_reference text unique not null,
+  status text not null default 'active',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.payvessel_accounts enable row level security;
+
+drop policy if exists "Users can view own payvessel account" on public.payvessel_accounts;
+create policy "Users can view own payvessel account" on public.payvessel_accounts
+  for select using (auth.uid() = user_id);
+
+-- No insert/update/delete policies on purpose — only the service_role key
+-- (used inside the payvessel-create-account and payvessel-webhook edge
+-- functions) can write to this table.
+
+-- Virtual USD debit cards (Payvessel Issuing) -- net new, no existing table
+-- to conflict with. One user can hold more than one card (soft-capped at 3
+-- non-terminated cards per user in the edge function, not enforced here),
+-- so this is NOT unique on user_id like the funding-account tables above.
+--
+-- IMPORTANT data-isolation note: Payvessel's "List Cards" API returns EVERY
+-- card issued under our single shared business account, across ALL MHU
+-- Global users -- there is no per-customer filter on their side. This table
+-- is what makes per-user isolation possible: the payvessel-cards edge
+-- function always reads/writes through this table (scoped by
+-- auth.uid() via RLS) and never exposes Payvessel's raw list-cards response
+-- to a client. Never remove that indirection.
+--
+-- card_number and cvv are deliberately NOT columns here -- Payvessel's own
+-- security guidance (docs.payvessel.com/virtual-cards/overview) is to never
+-- persist those anywhere and only fetch them from Payvessel on demand, over
+-- HTTPS, for the active viewing session. balance_usd is a cache updated
+-- whenever the edge function or webhook touches a card; always treat a live
+-- "get" call as the source of truth over this cached value.
+create table if not exists public.virtual_cards (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  payvessel_card_id uuid unique not null,
+  brand text not null,
+  currency text not null default 'USD',
+  card_name text,
+  masked_pan text not null default '',
+  status text not null default 'PENDING',
+  balance_usd numeric not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists virtual_cards_user_id_idx on public.virtual_cards(user_id);
+
+alter table public.virtual_cards enable row level security;
+
+drop policy if exists "Users can view own virtual cards" on public.virtual_cards;
+create policy "Users can view own virtual cards" on public.virtual_cards
+  for select using (auth.uid() = user_id);
+
+-- No insert/update/delete policies on purpose -- only the service_role key
+-- (used inside the payvessel-cards and payvessel-webhook edge functions)
+-- can write to this table.
+
+-- Extra identity document verifications (NIN, driver's license, voter's
+-- card, international passport) via Payvessel's Identity Verification API.
+-- Net new, no existing table to conflict with. Separate from the BVN check
+-- done at signup (payvessel_accounts doesn't track that either) -- this is
+-- purely a record of which OTHER documents a user has had verified, shown
+-- back to them as a trust/KYC-completeness indicator. One row per
+-- user+doc_type (re-verifying replaces the row rather than accumulating
+-- duplicates).
+--
+-- doc_number is stored as returned/submitted (license/voter's/passport
+-- numbers aren't as sensitive as a BVN and are needed to display "which
+-- document is this"); a verified photo, if Payvessel returns one, is
+-- deliberately NOT stored here -- there's no product need to keep it and
+-- every unnecessary stored identity photo is one more thing to secure.
+create table if not exists public.identity_verifications (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  doc_type text not null check (doc_type in ('nin', 'drivers_license', 'voters_card', 'passport')),
+  doc_number text not null,
+  verified_name text,
+  status text not null default 'verified',
+  details jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (user_id, doc_type)
+);
+
+alter table public.identity_verifications enable row level security;
+
+drop policy if exists "Users can view own identity verifications" on public.identity_verifications;
+create policy "Users can view own identity verifications" on public.identity_verifications
+  for select using (auth.uid() = user_id);
+
+-- No insert/update/delete policies on purpose -- only the service_role key
+-- (used inside the payvessel-identity edge function) can write to this
+-- table.
+
+-- eSIM data package orders (Payvessel VaaS eSIM API). Net new. Payvessel's
+-- eSIM API has no business-wide "list all orders" endpoint the way cards
+-- and flights do, but this table is still the source of truth for "which
+-- orders belong to this user" -- the edge function never lets a user fetch
+-- an order id it didn't create.
+create table if not exists public.esim_orders (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  payvessel_order_id uuid unique not null,
+  reference text not null,
+  package_code text not null,
+  package_name text not null,
+  location text not null,
+  amount_ngn numeric not null,
+  status text not null default 'pending',
+  qr_code_url text,
+  iccid text,
+  activation_details jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists esim_orders_user_id_idx on public.esim_orders(user_id);
+alter table public.esim_orders enable row level security;
+
+drop policy if exists "Users can view own esim orders" on public.esim_orders;
+create policy "Users can view own esim orders" on public.esim_orders
+  for select using (auth.uid() = user_id);
+
+-- Flight quotes and orders (Payvessel VaaS Flight API). Net new.
+-- IMPORTANT data-isolation note, same reasoning as `virtual_cards`:
+-- Payvessel's "List Flight Orders" endpoint returns every order for our
+-- shared business account across ALL users. flight_orders is what makes
+-- per-user isolation possible -- the payvessel-flight edge function always
+-- reads/writes through this table and never forwards that endpoint's raw
+-- response to a client. flight_quotes exists so a quote's exact priced
+-- total (fetched once, at quote-creation time) can be charged correctly at
+-- order time without trusting a client-supplied amount, and so one user
+-- can't complete an order against a quote_id created by a different user.
+create table if not exists public.flight_quotes (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  payvessel_quote_id uuid unique not null,
+  currency_code text not null,
+  total_amount numeric not null,
+  route_summary text not null,
+  status text not null default 'active',
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists flight_quotes_user_id_idx on public.flight_quotes(user_id);
+alter table public.flight_quotes enable row level security;
+
+drop policy if exists "Users can view own flight quotes" on public.flight_quotes;
+create policy "Users can view own flight quotes" on public.flight_quotes
+  for select using (auth.uid() = user_id);
+
+create table if not exists public.flight_orders (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  payvessel_order_id uuid unique not null,
+  merchant_reference text not null,
+  route_summary text not null,
+  amount_ngn numeric not null,
+  status text not null default 'pending',
+  passengers jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists flight_orders_user_id_idx on public.flight_orders(user_id);
+alter table public.flight_orders enable row level security;
+
+drop policy if exists "Users can view own flight orders" on public.flight_orders;
+create policy "Users can view own flight orders" on public.flight_orders
+  for select using (auth.uid() = user_id);
+
+-- No insert/update/delete policies on any of the three tables above on
+-- purpose -- only the service_role key (used inside payvessel-esim and
+-- payvessel-flight) can write to them.
+
 -- Phone numbers in the real `users` table (populated by the Flutter app)
 -- aren't guaranteed to be in one consistent format -- some rows may have
 -- "0801...", others "+234801...", others "234801...". Comparing raw

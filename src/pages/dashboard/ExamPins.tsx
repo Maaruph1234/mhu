@@ -46,7 +46,7 @@ export default function ExamPins() {
     <div className="mx-auto max-w-xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Exam pins</h1>
-        <p className="mt-1 text-sm text-slate-500">Buy WAEC and NECO result checker pins instantly.</p>
+        <p className="mt-1 text-sm text-slate-500">Buy WAEC result checker pins instantly.</p>
       </div>
       <Card>
         <form onSubmit={handleSubmit} className="space-y-5">
