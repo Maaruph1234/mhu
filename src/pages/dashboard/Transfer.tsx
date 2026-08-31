@@ -180,12 +180,16 @@ function TransferToBank({ onDone }: { onDone: () => Promise<void> }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
     setSuccess(null);
     if (!accountName) {
-      setError("Resolve the account number first so you can confirm who you're sending to.");
+      // Don't clobber a more specific error already surfaced by the resolve
+      // attempt (e.g. the real reason Payvessel rejected the account) with
+      // this generic fallback -- only show the fallback if nothing else is
+      // already explaining what's wrong.
+      setError((prev) => prev ?? "Resolve the account number first so you can confirm who you're sending to.");
       return;
     }
+    setError(null);
     setLoading(true);
     try {
       const result = await payvessel.payoutToBank({
