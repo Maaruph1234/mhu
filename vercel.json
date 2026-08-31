@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/payvessel-webhook",
+      "destination": "https://hkgbmcatbsdviasmrube.supabase.co/functions/v1/payvessel-webhook"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

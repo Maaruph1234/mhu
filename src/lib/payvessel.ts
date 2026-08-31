@@ -33,7 +33,7 @@ import type { PayvesselAccount } from "../types";
 
 export interface CreatePayvesselAccountInput {
   bvn: string;
-  nin?: string;
+  nin: string;
 }
 
 export async function getMyAccount(): Promise<PayvesselAccount | null> {

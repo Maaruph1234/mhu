@@ -17,9 +17,14 @@
 // -- not guessed:
 //   POST {PAYVESSEL_BASE_URL}/pms/api/external/request/customerReservedAccount/
 //   headers: api-key, api-secret, Content-Type: application/json
-//   { email, name, phoneNumber, bankcode: string[], account_type, businessid, bvn }
+//   { email, name, phoneNumber, bankcode: string[], account_type, businessid, bvn, nin }
 //   -> { status, service, business, banks: [{ bankCode, bankName, accountNumber,
 //        accountName, account_type, trackingReference, ... }] }
+//
+// NIN is required in addition to BVN as of Payvessel's business-approval
+// notice (Aug 2026): "ensure the verified NIN/BVN is included in users'
+// payloads for virtual account generation." Both are collected on the
+// funding screen and passed through here untouched.
 //
 // account_type "STATIC" is used (not "DYNAMIC") because this is a permanent,
 // reusable account for ongoing wallet funding, same intent as Korapay's
@@ -82,6 +87,9 @@ Deno.serve(async (req) => {
     if (!bvn) {
       return json({ error: "bvn is required" }, { status: 400 });
     }
+    if (!nin) {
+      return json({ error: "nin is required" }, { status: 400 });
+    }
 
     // Already has an account? Return it instead of creating a duplicate.
     const { data: existing } = await service
@@ -118,7 +126,7 @@ Deno.serve(async (req) => {
         account_type: "STATIC",
         businessid: PAYVESSEL_BUSINESS_ID,
         bvn,
-        ...(nin ? { nin } : {}),
+        nin,
       }),
     });
     const pvJson = await pvRes.json();
@@ -149,6 +157,7 @@ Deno.serve(async (req) => {
     }
 
     // Note: bvn/nin are intentionally NOT persisted anywhere in our own
+
     // database -- passed through above and kept only on Payvessel's side,
     // needed just long enough to satisfy their KYC check.
 

@@ -183,6 +183,16 @@ real header names defensively and logs all received header names if none
 match, so a mismatch is diagnosable from the function logs on your first
 real webhook delivery rather than failing silently.
 
+**Webhook URL must match your business website's domain.** Payvessel's
+dashboard rejects a webhook URL that isn't on the same domain as your
+registered business website (rejects raw `*.supabase.co` URLs outright).
+`vercel.json` at the project root proxies `https://mhuglobal.com/api/
+payvessel-webhook` through to the real Supabase function URL (Vercel
+rewrites to an external destination forward the method, headers, and raw
+body unchanged, so HMAC signature verification still works against the
+untouched body). Register `https://mhuglobal.com/api/payvessel-webhook` —
+not the supabase.co URL — as the webhook URL in the Payvessel dashboard.
+
 **Virtual USD cards (issuing).** New feature — a user can create a
 Visa/Mastercard USD card (full KYC per card: BVN, NIN, DOB, address, an ID
 photo), fund/withdraw it against their own NGN wallet, freeze/unfreeze,
