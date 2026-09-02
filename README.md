@@ -164,7 +164,13 @@ supabase functions deploy payvessel-create-account
 BVN is mandatory for a STATIC account, same regulatory requirement Korapay
 had. `payvessel-verify-bvn` (deploy with `--no-verify-jwt`, since it runs
 before the user has a session) gates registration the same way the old
-Korapay BVN check did, using Payvessel's Enhanced BVN Verification.
+Korapay BVN check did, using Payvessel's **Basic** BVN Verification (switched
+from Enhanced, Sept 2026 — Enhanced was confirmed with Payvessel support to
+intermittently return a different person's identity, reproduced live in
+their own docs.payvessel.com playground on a real BVN. Basic requires more
+input up front — first/middle/last name, gender, date of birth, phone — and
+returns match verdicts rather than the record's own data, but was reliable
+in that same test. See the function's header comment for full detail).
 
 **Payouts (transfer to bank).** `payvessel-payout` lists banks, resolves an
 account number to a name, and disburses — same three-action shape the old

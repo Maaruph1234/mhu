@@ -12,30 +12,45 @@
 //   PAYVESSEL_API_KEY, PAYVESSEL_SECRET, PAYVESSEL_BASE_URL
 //   (https://sandbox.payvessel.com for testing, https://api.payvessel.com live)
 //
-// Endpoint/request/response shape confirmed directly against
-// docs.payvessel.com/api-reference/verification/enhanced-bvn-verification --
+// SWITCHED FROM ENHANCED TO BASIC (confirmed live with Payvessel support,
+// tested directly in their own docs.payvessel.com Postman-style playground
+// on a real BVN, Sept 2026): the Enhanced endpoint
+// (/kyc/api/v1/merchant/bvn/enhanced) was intermittently returning a
+// completely different person's identity data even against a correctly
+// funded business wallet -- reproduced inside Payvessel's own testing tool,
+// not just our code, so it's a bug on their Enhanced service specifically.
+// Basic (/kyc/api/v1/merchant/bvn/basic) reliably returned a correct 96%
+// match against the same real BVN in that same test. Endpoint/request/
+// response shape confirmed directly against
+// docs.payvessel.com/api-reference/verification/basic-bvn-verification --
 // not guessed:
-//   POST {PAYVESSEL_BASE_URL}/kyc/api/v1/merchant/bvn/enhanced
+//   POST {PAYVESSEL_BASE_URL}/kyc/api/v1/merchant/bvn/basic
 //   headers: api-key, api-secret, Content-Type: application/json
-//   { bvn } -> { success, message, data: { bvn, first_name, middle_name,
-//                last_name, gender, name_on_card, birthday, photo,
-//                phone_number, phone_number_2 }, charges }
+//   { bvn, first_name, middle_name, last_name, gender, birthday, phone_number }
+//   -> { success, message, data: { name_match_rlt, names_match_percentage,
+//        birthday_match_rlt, gender_match_rlt, phone_number_match_rlt },
+//        charges }
 //
-// Unlike Korapay's BVN lookup, Payvessel's Enhanced BVN endpoint does NOT
-// return a name/phone match verdict itself -- it just returns the BVN
-// record's real data. The name/phone match check against what the user
-// typed is therefore done entirely here, same normalization approach the
-// Korapay version used (last-10-digits phone compare, case-insensitive
-// name compare).
+// Unlike Enhanced, Basic does NOT return the BVN record's actual name/phone
+// for us to read back -- it only returns match verdicts ("MATCH" /
+// "NOT_MATCH") against whatever first_name/last_name/gender/birthday/
+// phone_number we send it. So there's no "verified record" to hand back to
+// the caller here; on a match, the caller just uses what the user already
+// typed (it's already been confirmed to match Payvessel's own record).
+// middle_name is accepted empty -- Payvessel's own playground test
+// succeeded with it left blank, so it's not force-required here even though
+// their docs UI marks the field "required".
 //
-// NOTE: Payvessel bills your merchant wallet per Enhanced BVN lookup (even
-// on a "not found" result, per their own docs) -- if every call here fails
-// with a 402 "insufficient wallet balance" error, that's your Payvessel
-// wallet needing a top-up, not a bug here.
+// NOTE: Payvessel bills your merchant wallet per Basic BVN lookup (even on
+// a "not found"/no-match result, per their own docs, same as Enhanced did)
+// -- if every call here fails with a 402 "insufficient wallet balance"
+// error, that's your Payvessel WALLET (a separate balance from your
+// settlement account -- confirmed with their support) needing a top-up,
+// not a bug here.
 //
 // Nothing here is persisted to our own database -- the BVN and the full
 // Payvessel response are used only for this one pass/fail check and then
-// discarded, same policy as the Korapay version.
+// discarded, same policy the Enhanced version had.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -54,21 +69,13 @@ const PAYVESSEL_BASE_URL = Deno.env.get("PAYVESSEL_BASE_URL") ?? "https://sandbo
 const PAYVESSEL_API_KEY = Deno.env.get("PAYVESSEL_API_KEY") ?? "";
 const PAYVESSEL_SECRET = Deno.env.get("PAYVESSEL_SECRET") ?? "";
 
-function normalizePhone(p: string | null | undefined): string {
-  return (p ?? "").replace(/\D/g, "").slice(-10);
-}
-
-function normalizeName(n: string | null | undefined): string {
-  return (n ?? "").trim().toLowerCase();
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    const { bvn, firstName, lastName, phone } = await req.json();
+    const { bvn, firstName, middleName, lastName, gender, birthday, phone } = await req.json();
 
     if (!bvn || !/^\d{11}$/.test(bvn)) {
       return json({ verified: false, reason: "Enter a valid 11-digit BVN" }, { status: 400 });
@@ -76,21 +83,45 @@ Deno.serve(async (req) => {
     if (!firstName?.trim() || !lastName?.trim()) {
       return json({ verified: false, reason: "First and last name are required" }, { status: 400 });
     }
+    if (!gender || (gender !== "MALE" && gender !== "FEMALE")) {
+      return json({ verified: false, reason: "Select a gender" }, { status: 400 });
+    }
+    if (!birthday || !/^\d{4}-\d{2}-\d{2}$/.test(birthday)) {
+      return json({ verified: false, reason: "Enter a valid date of birth" }, { status: 400 });
+    }
+    if (!phone?.trim()) {
+      return json({ verified: false, reason: "Phone number is required" }, { status: 400 });
+    }
 
-    const pvRes = await fetch(`${PAYVESSEL_BASE_URL}/kyc/api/v1/merchant/bvn/enhanced`, {
+    const pvRes = await fetch(`${PAYVESSEL_BASE_URL}/kyc/api/v1/merchant/bvn/basic`, {
       method: "POST",
       headers: {
         "api-key": PAYVESSEL_API_KEY,
         "api-secret": PAYVESSEL_SECRET,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ bvn }),
+      body: JSON.stringify({
+        bvn,
+        first_name: firstName.trim(),
+        middle_name: middleName?.trim() ?? "",
+        last_name: lastName.trim(),
+        gender,
+        birthday,
+        phone_number: phone.trim(),
+      }),
     });
     const pvJson = await pvRes.json();
+    // Logged so the raw Payvessel response is retrievable from Supabase's
+    // function logs -- needed to hand to Payvessel support when disputing a
+    // mismatched identity result, since nothing else captures this.
+    console.log("payvessel-verify-bvn: raw Payvessel response", JSON.stringify(pvJson));
 
     if (pvRes.status === 402) {
       return json(
-        { verified: false, reason: "Identity verification is temporarily unavailable. Please try again shortly." },
+        {
+          verified: false,
+          reason: "Identity verification is temporarily unavailable. Please try again shortly.",
+        },
         { status: 502 }
       );
     }
@@ -101,30 +132,33 @@ Deno.serve(async (req) => {
       );
     }
 
-    const data = pvJson.data;
-    const firstNameMatch = normalizeName(data.first_name) === normalizeName(firstName);
-    const lastNameMatch = normalizeName(data.last_name) === normalizeName(lastName);
-    const phoneMatch = phone
-      ? normalizePhone(data.phone_number) === normalizePhone(phone) ||
-        normalizePhone(data.phone_number_2) === normalizePhone(phone)
-      : true;
+    const data = pvJson.data as Record<string, unknown>;
+    const nameMatch = data.name_match_rlt === "MATCH";
+    // Gender/birthday/phone match results are checked defensively -- only
+    // enforced if Payvessel actually returned a verdict for that field, so a
+    // field they don't evaluate for a given account tier doesn't silently
+    // block otherwise-valid registrations.
+    const genderMatch = data.gender_match_rlt === undefined || data.gender_match_rlt === "MATCH";
+    const birthdayMatch = data.birthday_match_rlt === undefined || data.birthday_match_rlt === "MATCH";
+    const phoneMatch = data.phone_number_match_rlt === undefined || data.phone_number_match_rlt === "MATCH";
 
-    if (!firstNameMatch || !lastNameMatch) {
+    if (!nameMatch) {
       return json({ verified: false, reason: "The name you entered doesn't match this BVN's records." });
+    }
+    if (!birthdayMatch) {
+      return json({ verified: false, reason: "The date of birth you entered doesn't match this BVN's records." });
+    }
+    if (!genderMatch) {
+      return json({ verified: false, reason: "The gender you entered doesn't match this BVN's records." });
     }
     if (!phoneMatch) {
       return json({ verified: false, reason: "The phone number you entered doesn't match this BVN's records." });
     }
 
-    // Return the BVN record's own name/phone (not just a match flag) so the
-    // caller can populate the new account with exactly what's on file.
-    return json({
-      verified: true,
-      firstName: data.first_name,
-      lastName: data.last_name,
-      phone: data.phone_number,
-      bvn: data.bvn,
-    });
+    // No record data to hand back (Basic only returns match verdicts) -- the
+    // caller uses what the user already typed, since it's now confirmed to
+    // match Payvessel's record.
+    return json({ verified: true, matchPercentage: data.names_match_percentage ?? null });
   } catch (err) {
     return json({ verified: false, reason: (err as Error).message }, { status: 500 });
   }

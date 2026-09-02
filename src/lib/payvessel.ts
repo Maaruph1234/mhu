@@ -60,35 +60,40 @@ export async function createAccount(input: CreatePayvesselAccountInput): Promise
 }
 
 /**
- * BVN identity check used at registration -- the name and phone number
- * someone types on the signup form must match what Payvessel's Enhanced BVN
- * Verification API (docs.payvessel.com/identity-verification/enhanced-bvn-
- * verification) returns for that BVN, or registration is declined before an
- * account is ever created. Called *before* supabase.auth.signUp(), so this
- * hits a public/no-JWT edge function (payvessel-verify-bvn) rather than one
- * gated behind a session.
+ * BVN identity check used at registration -- the name, gender, date of
+ * birth, and phone number someone types on the signup form must match what
+ * Payvessel's Basic BVN Verification API (docs.payvessel.com/api-reference/
+ * verification/basic-bvn-verification) says for that BVN, or registration
+ * is declined before an account is ever created. Called *before*
+ * supabase.auth.signUp(), so this hits a public/no-JWT edge function
+ * (payvessel-verify-bvn) rather than one gated behind a session.
+ *
+ * Switched from Enhanced to Basic (Sept 2026) after Payvessel's Enhanced
+ * endpoint was confirmed -- live, in their own docs playground, on a real
+ * BVN -- to intermittently return a different person's identity. Basic
+ * doesn't hand back the BVN record's own name/phone (only match verdicts),
+ * so on success the caller just uses what the user already typed.
  */
 export interface VerifyBvnInput {
   bvn: string;
   firstName: string;
+  middleName?: string;
   lastName: string;
+  gender: "MALE" | "FEMALE";
+  birthday: string; // YYYY-MM-DD
   phone: string;
 }
 
 export interface VerifyBvnResult {
   verified: boolean;
   reason?: string;
-  // Present when verified: true -- the BVN record's own name/phone, used to
-  // populate the new account instead of whatever was typed on the form.
-  firstName?: string;
-  lastName?: string;
-  phone?: string;
+  matchPercentage?: number | null;
 }
 
 export async function verifyBvn(input: VerifyBvnInput): Promise<VerifyBvnResult> {
   if (isDemoMode) {
     await new Promise((r) => setTimeout(r, 700));
-    return { verified: true, firstName: input.firstName, lastName: input.lastName, phone: input.phone };
+    return { verified: true, matchPercentage: 100 };
   }
   const { data, error } = await supabase.functions.invoke("payvessel-verify-bvn", {
     body: input,

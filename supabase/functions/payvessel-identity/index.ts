@@ -177,6 +177,10 @@ Deno.serve(async (req) => {
     }
 
     const { status, json: pvJson } = await pvPost(ENDPOINTS[docType], buildRequestBody(docType, docNumber));
+    // Logged so the raw Payvessel response is retrievable from Supabase's
+    // function logs -- needed to hand to Payvessel support when disputing a
+    // mismatched identity result, since nothing else captures this.
+    console.log("payvessel-identity: raw Payvessel response", JSON.stringify({ status, docType, pvJson }));
 
     if (status === 402) {
       // OUR business wallet is out of funds -- Payvessel never processed
