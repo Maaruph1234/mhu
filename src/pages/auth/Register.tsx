@@ -18,7 +18,7 @@ export default function Register() {
     birthday: "",
     email: "",
     phone: "",
-    bvn: "",
+    nin: "",
     password: "",
     referredBy: "",
   });
@@ -36,14 +36,14 @@ export default function Register() {
     try {
       // Identity check happens BEFORE any account is created: the name,
       // gender, date of birth, and phone number entered here must match
-      // what Payvessel's Basic BVN Verification says for that BVN, or
+      // what Payvessel's Basic NIN Verification says for that NIN, or
       // registration is declined outright. See
-      // supabase/functions/payvessel-verify-bvn for the actual matching
-      // logic (switched from Enhanced to Basic -- see that file's header
-      // comment for why).
+      // supabase/functions/payvessel-verify-nin for the actual matching
+      // logic. Switched from BVN to NIN (Sept 2026) after BVN
+      // verification kept returning genuine "name doesn't match" results.
       if (!form.gender) throw new Error("Select a gender");
-      const { verified, reason } = await payvessel.verifyBvn({
-        bvn: form.bvn,
+      const { verified, reason } = await payvessel.verifyNin({
+        nin: form.nin,
         firstName: form.firstName,
         middleName: form.middleName,
         lastName: form.lastName,
@@ -52,10 +52,10 @@ export default function Register() {
         phone: form.phone,
       });
       if (!verified) {
-        throw new Error(reason || "We couldn't verify those details against your BVN. Please check and try again.");
+        throw new Error(reason || "We couldn't verify those details against your NIN. Please check and try again.");
       }
 
-      // Basic BVN Verification only returns match verdicts, not the
+      // Basic NIN Verification only returns match verdicts, not the
       // record's own name/phone (unlike Enhanced) -- since it's already
       // confirmed to match, use exactly what was typed.
       const fullName = `${form.firstName} ${form.lastName}`.trim();
@@ -156,16 +156,16 @@ export default function Register() {
           required
         />
         <Input
-          label="BVN"
-          placeholder="11-digit BVN"
+          label="NIN"
+          placeholder="11-digit NIN"
           icon={<ShieldCheck size={16} />}
-          value={form.bvn}
-          onChange={update("bvn")}
+          value={form.nin}
+          onChange={update("nin")}
           maxLength={11}
           required
         />
         <p className="-mt-2 text-xs text-slate-400">
-          Your name, gender, date of birth, and phone number must match your BVN record — this is how we
+          Your name, gender, date of birth, and phone number must match your NIN record — this is how we
           confirm it's really you.
         </p>
         <Input

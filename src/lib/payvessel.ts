@@ -103,6 +103,37 @@ export async function verifyBvn(input: VerifyBvnInput): Promise<VerifyBvnResult>
 }
 
 /**
+ * NIN identity check used at registration -- same idea as verifyBvn, but
+ * against NIN instead (switched Sept 2026 after BVN verification kept
+ * genuinely failing name-match checks). Mirrors payvessel-verify-bvn's
+ * request/response shape exactly (see payvessel-verify-nin's header
+ * comment) -- only the field name (nin vs bvn) differs.
+ */
+export interface VerifyNinInput {
+  nin: string;
+  firstName: string;
+  middleName?: string;
+  lastName: string;
+  gender: "MALE" | "FEMALE";
+  birthday: string; // YYYY-MM-DD
+  phone: string;
+}
+
+export type VerifyNinResult = VerifyBvnResult;
+
+export async function verifyNin(input: VerifyNinInput): Promise<VerifyNinResult> {
+  if (isDemoMode) {
+    await new Promise((r) => setTimeout(r, 700));
+    return { verified: true, matchPercentage: 100 };
+  }
+  const { data, error } = await supabase.functions.invoke("payvessel-verify-nin", {
+    body: input,
+  });
+  if (error) throw new Error(await extractFunctionErrorMessage(error));
+  return data as VerifyNinResult;
+}
+
+/**
  * "Transfer to bank" -- sending money OUT of the wallet to an external
  * Nigerian bank account, via Payvessel's Transfers API. Routed through the
  * `payvessel-payout` Edge Function for the same secret-key reasons.

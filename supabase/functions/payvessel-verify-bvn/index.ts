@@ -93,6 +93,22 @@ Deno.serve(async (req) => {
       return json({ verified: false, reason: "Phone number is required" }, { status: 400 });
     }
 
+    const requestBody = {
+      bvn,
+      first_name: firstName.trim(),
+      middle_name: middleName?.trim() ?? "",
+      last_name: lastName.trim(),
+      gender,
+      birthday,
+      phone_number: phone.trim(),
+    };
+    // Logged so the EXACT outgoing request is retrievable from Supabase's
+    // function logs -- needed to compare, field by field, against a known-
+    // good manual test (e.g. in Payvessel's own docs playground) when
+    // diagnosing a mismatch that shouldn't be happening. BVN/name/phone
+    // aren't API secrets (unlike PAYVESSEL_API_KEY/SECRET), safe to log.
+    console.log("payvessel-verify-bvn: outgoing request to Payvessel", JSON.stringify(requestBody));
+
     const pvRes = await fetch(`${PAYVESSEL_BASE_URL}/kyc/api/v1/merchant/bvn/basic`, {
       method: "POST",
       headers: {
@@ -100,15 +116,7 @@ Deno.serve(async (req) => {
         "api-secret": PAYVESSEL_SECRET,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        bvn,
-        first_name: firstName.trim(),
-        middle_name: middleName?.trim() ?? "",
-        last_name: lastName.trim(),
-        gender,
-        birthday,
-        phone_number: phone.trim(),
-      }),
+      body: JSON.stringify(requestBody),
     });
     const pvJson = await pvRes.json();
     // Logged so the raw Payvessel response is retrievable from Supabase's
