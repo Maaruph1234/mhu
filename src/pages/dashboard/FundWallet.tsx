@@ -17,7 +17,6 @@ export default function FundWallet() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
   const [bvn, setBvn] = useState("");
-  const [nin, setNin] = useState("");
 
   useEffect(() => {
     if (isDemoMode) {
@@ -56,13 +55,13 @@ export default function FundWallet() {
       setCreateError("Enter a valid 11-digit BVN");
       return;
     }
-    if (!nin || nin.length !== 11) {
-      setCreateError("Enter a valid 11-digit NIN");
-      return;
-    }
     setCreating(true);
     try {
-      const created = await payvessel.createAccount({ bvn, nin });
+      // NIN isn't asked for here -- it's already on file from the one
+      // verified at signup (see store_verified_nin.sql). If somehow
+      // missing (an account from before that existed), the edge function
+      // returns a clear error rather than silently failing.
+      const created = await payvessel.createAccount({ bvn });
       setAccount(created);
     } catch (err) {
       setCreateError((err as Error).message);
@@ -86,9 +85,9 @@ export default function FundWallet() {
           <div className="flex gap-3 rounded-xl border border-accent/20 bg-accent/5 p-4 text-sm text-slate-600">
             <ShieldCheck size={18} className="mt-0.5 shrink-0 text-accent" />
             <p>
-              We need your BVN and NIN to generate a dedicated bank account in your name. This is a
-              one-time step required by regulation — both are sent securely and never stored beyond what's
-              needed to create the account.
+              We need your BVN to generate a dedicated bank account in your name. This is a one-time
+              step required by regulation — it's sent securely and never stored beyond what's needed to
+              create the account. (Your NIN is already on file from signup, so we don't need to ask again.)
             </p>
           </div>
           <div className="mt-4 space-y-3">
@@ -97,13 +96,6 @@ export default function FundWallet() {
               placeholder="11-digit BVN"
               value={bvn}
               onChange={(e) => setBvn(e.target.value)}
-              maxLength={11}
-            />
-            <Input
-              label="NIN"
-              placeholder="11-digit NIN"
-              value={nin}
-              onChange={(e) => setNin(e.target.value)}
               maxLength={11}
             />
             {createError && <p className="text-xs text-red-500">{createError}</p>}

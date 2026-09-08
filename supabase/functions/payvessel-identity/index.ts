@@ -19,15 +19,21 @@
 // ============================================================================
 // Every one of these calls costs OUR Payvessel business wallet ~NGN 25,
 // and -- per Payvessel's own docs -- that charge applies EVEN WHEN the
-// document isn't found (see the "documentNotFound" example in each
-// endpoint's docs: `charges.charged: true`). Without a fee here, anyone
-// could drain the business wallet by submitting garbage document numbers
-// all day. So a flat NGN fee is deducted from the USER'S wallet up front,
-// covering Payvessel's cost plus a small margin, and it's charged whenever
-// Payvessel actually processes the request (success OR "not found") --
-// only a genuine network/5xx failure before Payvessel responds, or a 402
-// (OUR wallet is out of funds) skips the charge, since in those cases
-// nothing was billed to us either.
+// document isn't found (see the "ninNotFound" example in their OpenAPI
+// spec for Enhanced NIN Verification: `charges.charged: true,
+// charged_amount: "25.00"`, confirmed directly against
+// docs.payvessel.com/api-reference/verification/enhanced-nin-verification).
+// Without a fee here, anyone could drain the business wallet by submitting
+// garbage document numbers all day.
+//
+// FREE_ATTEMPTS_PER_USER (below) lets the business absorb the first couple
+// of checks per user -- friendlier onboarding, still bounded -- before a
+// flat NGN fee kicks in on the user's own wallet from there on, covering
+// Payvessel's cost plus a small margin. The fee (once it applies) is
+// charged whenever Payvessel actually processes the request (success OR
+// "not found") -- only a genuine network/5xx failure before Payvessel
+// responds, or a 402 (OUR wallet is out of funds) skips the charge, since
+// in those cases nothing was billed to us either.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -48,6 +54,11 @@ const PAYVESSEL_BASE_URL = Deno.env.get("PAYVESSEL_BASE_URL") ?? "https://sandbo
 const PAYVESSEL_API_KEY = Deno.env.get("PAYVESSEL_API_KEY") ?? "";
 const PAYVESSEL_SECRET = Deno.env.get("PAYVESSEL_SECRET") ?? "";
 const FEE_NGN = Number(Deno.env.get("IDENTITY_VERIFICATION_FEE_NGN")) || 150;
+// Total identity-verification attempts (any doc type combined) the
+// business absorbs per user before the user's own wallet starts getting
+// charged. Configurable via secret so this can be tuned without a redeploy
+// of the surrounding logic later.
+const FREE_ATTEMPTS_PER_USER = Number(Deno.env.get("IDENTITY_VERIFICATION_FREE_ATTEMPTS")) || 2;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -166,21 +177,36 @@ Deno.serve(async (req) => {
       return json({ error: "Document number is required" }, { status: 400 });
     }
 
-    const { data: userRow } = await service
-      .from("users")
-      .select("wallet_balance")
-      .eq("id", user.id)
-      .single();
+    // How many prior identity-verification attempts (any doc type, success
+    // or not) has this user already had processed? Counted from
+    // `transactions` since every processed attempt logs a row there
+    // regardless of whether it ended up free or charged -- see below.
+    const { count: priorAttempts } = await service
+      .from("transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("type", "identity_verification");
 
-    if (!userRow || Number(userRow.wallet_balance ?? 0) < FEE_NGN) {
-      return json({ error: `Insufficient wallet balance. This check costs ₦${FEE_NGN}.` }, { status: 402 });
+    const isFreeAttempt = (priorAttempts ?? 0) < FREE_ATTEMPTS_PER_USER;
+
+    let userRow: { wallet_balance: number | null } | null = null;
+    if (!isFreeAttempt) {
+      const { data } = await service
+        .from("users")
+        .select("wallet_balance")
+        .eq("id", user.id)
+        .single();
+      userRow = data;
+      if (!userRow || Number(userRow.wallet_balance ?? 0) < FEE_NGN) {
+        return json({ error: `Insufficient wallet balance. This check costs ₦${FEE_NGN}.` }, { status: 402 });
+      }
     }
 
     const { status, json: pvJson } = await pvPost(ENDPOINTS[docType], buildRequestBody(docType, docNumber));
     // Logged so the raw Payvessel response is retrievable from Supabase's
     // function logs -- needed to hand to Payvessel support when disputing a
     // mismatched identity result, since nothing else captures this.
-    console.log("payvessel-identity: raw Payvessel response", JSON.stringify({ status, docType, pvJson }));
+    console.log("payvessel-identity: raw Payvessel response", JSON.stringify({ status, docType, pvJson, isFreeAttempt }));
 
     if (status === 402) {
       // OUR business wallet is out of funds -- Payvessel never processed
@@ -194,11 +220,14 @@ Deno.serve(async (req) => {
     }
 
     // Payvessel processed the request (success or a clean "not found") --
-    // it billed our wallet either way, so charge the user's fee now.
-    await service
-      .from("users")
-      .update({ wallet_balance: Number(userRow.wallet_balance ?? 0) - FEE_NGN })
-      .eq("id", user.id);
+    // it billed OUR wallet ~NGN 25 either way. Within the free tier, the
+    // business eats that cost; past it, pass the flat fee on to the user.
+    if (!isFreeAttempt && userRow) {
+      await service
+        .from("users")
+        .update({ wallet_balance: Number(userRow.wallet_balance ?? 0) - FEE_NGN })
+        .eq("id", user.id);
+    }
 
     const docLabel: Record<DocType, string> = {
       nin: "NIN",
@@ -210,10 +239,10 @@ Deno.serve(async (req) => {
     await service.from("transactions").insert({
       user_id: user.id,
       type: "identity_verification",
-      amount: FEE_NGN,
+      amount: isFreeAttempt ? 0 : FEE_NGN,
       status: "successful",
       reference: `IDV-${Date.now()}`,
-      title: `${docLabel[docType]} verification`,
+      title: `${docLabel[docType]} verification${isFreeAttempt ? " (free)" : ""}`,
       subtitle: pvJson.success ? "Verified" : "Document not found",
     });
 

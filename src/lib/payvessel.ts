@@ -33,7 +33,10 @@ import type { PayvesselAccount } from "../types";
 
 export interface CreatePayvesselAccountInput {
   bvn: string;
-  nin: string;
+  // Optional -- normally already on file from the NIN verified at signup
+  // (see store_verified_nin.sql). Only needed here as a fallback for
+  // accounts created before that existed.
+  nin?: string;
 }
 
 export async function getMyAccount(): Promise<PayvesselAccount | null> {

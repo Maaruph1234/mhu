@@ -379,4 +379,3 @@ Deno.serve(async (req) => {
 
 
 
-supabase secrets set RESEND_API_KEY=xxx RESEND_FROM_EMAIL="MHU Global <noreply@mhuglobal.com>" --project-ref hkgbmcatbsdviasmrube

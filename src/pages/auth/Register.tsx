@@ -66,6 +66,9 @@ export default function Register() {
         phone: verifiedPhone,
         password: form.password,
         referredBy: form.referredBy,
+        // Already verified against Payvessel above -- stored on the
+        // profile so Fund Wallet can reuse it instead of asking again.
+        nin: form.nin,
       });
       if (signUpError) throw new Error(signUpError);
 

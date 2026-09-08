@@ -10,7 +10,7 @@ interface AuthContextValue {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
-  signUp: (input: { fullName: string; email: string; phone: string; password: string; referredBy?: string }) => Promise<{ error?: string; needsVerification?: boolean; userId?: string }>;
+  signUp: (input: { fullName: string; email: string; phone: string; password: string; referredBy?: string; nin?: string }) => Promise<{ error?: string; needsVerification?: boolean; userId?: string }>;
   sendSignupOtp: (input: { userId: string; email: string; phone: string; channel: "email" | "sms" }) => Promise<{ error?: string }>;
   verifySignupOtp: (input: { userId: string; code: string; email: string; password: string }) => Promise<{ error?: string }>;
   signIn: (input: { email: string; password: string }) => Promise<{ error?: string }>;
@@ -78,35 +78,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // go out over whichever single channel Supabase's email settings are
   // wired to (Resend, via custom SMTP) — there's no way to also push the
   // identical token over SMS. So instead: signUp() below creates the
-  // account as usual (still unconfirmed), then the caller (Register.tsx)
-  // triggers sendSignupOtp() to generate and deliver OUR OWN 6-digit code
-  // via whichever channel it asks for (email via Resend, sms via SMSala —
-  // see supabase/functions/send-signup-otp). "Resend via the other
-  // channel" is just calling sendSignupOtp() again with a different
-  // channel. verifySignupOtp() checks that code and confirms the account
+  // account via the signup-create-account edge function (Admin API,
+  // email_confirm: false) INSTEAD of calling supabase.auth.signUp()
+  // directly -- signUp() unavoidably fires Supabase's own built-in
+  // confirmation email even when the account is left unconfirmed, which is
+  // exactly what was confusing users: they'd get that native link email
+  // (not ours), click it, and land on the homepage with nothing actually
+  // verified, instead of ever seeing the 6-digit code screen. Admin
+  // createUser sends no email of its own, so the ONLY email/SMS a user
+  // gets now is the one sendSignupOtp() below triggers explicitly.
+  // verifySignupOtp() checks that code and confirms the account
   // server-side; since confirming via the Admin API doesn't hand back a
   // session, it finishes by calling signInWithPassword itself using the
   // password the user already typed on the signup form. Regular login
   // (signIn, below) stays plain email+password, unaffected.
-  const signUp: AuthContextValue["signUp"] = async ({ fullName, email, phone, password, referredBy }) => {
+  const signUp: AuthContextValue["signUp"] = async ({ fullName, email, phone, password, referredBy, nin }) => {
     if (isDemoMode) {
       setSession(DEMO_SESSION);
       setProfile({ ...DEMO_PROFILE, display_name: fullName || DEMO_PROFILE.display_name, email: email || DEMO_PROFILE.email, phone_number: phone || DEMO_PROFILE.phone_number });
       return {};
     }
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName, phone, referred_by: referredBy },
-      },
+    const { data, error } = await supabase.functions.invoke("signup-create-account", {
+      body: { email, password, fullName, phone, referredBy, nin },
     });
-    if (error) return { error: error.message };
-    // No session back means Supabase is holding this account pending
-    // confirmation — that's the normal case; the user needs to enter the
-    // OTP code (sent separately via sendSignupOtp) before they have a
-    // session.
-    return { needsVerification: !data.session, userId: data.user?.id };
+    if (error) return { error: await extractFunctionErrorMessage(error) };
+    if (!data?.userId) return { error: data?.error ?? "Could not create your account" };
+    // Always needs verification -- this account is always created
+    // unconfirmed (email_confirm: false), no session is ever returned here.
+    return { needsVerification: true, userId: data.userId as string };
   };
 
   const sendSignupOtp: AuthContextValue["sendSignupOtp"] = async ({ userId, email, phone, channel }) => {

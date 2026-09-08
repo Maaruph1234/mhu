@@ -23,8 +23,11 @@
 //
 // NIN is required in addition to BVN as of Payvessel's business-approval
 // notice (Aug 2026): "ensure the verified NIN/BVN is included in users'
-// payloads for virtual account generation." Both are collected on the
-// funding screen and passed through here untouched.
+// payloads for virtual account generation." NIN is reused from the one
+// already verified at signup (stored on the profile row as verified_nin --
+// see store_verified_nin.sql) rather than asked for again here; only BVN
+// is collected on the funding screen. An explicit nin in the request body
+// still overrides/backfills that for accounts created before this existed.
 //
 // account_type "STATIC" is used (not "DYNAMIC") because this is a permanent,
 // reusable account for ongoing wallet funding, same intent as Korapay's
@@ -83,12 +86,9 @@ Deno.serve(async (req) => {
       return json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    const { bvn, nin } = await req.json();
+    const { bvn, nin: ninInput } = await req.json();
     if (!bvn) {
       return json({ error: "bvn is required" }, { status: 400 });
-    }
-    if (!nin) {
-      return json({ error: "nin is required" }, { status: 400 });
     }
 
     // Already has an account? Return it instead of creating a duplicate.
@@ -103,12 +103,21 @@ Deno.serve(async (req) => {
 
     const { data: profile } = await service
       .from("users")
-      .select("display_name, email, phone_number")
+      .select("display_name, email, phone_number, verified_nin")
       .eq("id", user.id)
       .single();
 
     if (!profile) {
       return json({ error: "Profile not found" }, { status: 404 });
+    }
+
+    // NIN was already verified once at signup and stored on the profile
+    // (see store_verified_nin.sql) -- reuse it so Fund Wallet only has to
+    // ask for BVN. Still accept an explicit nin in the request body as a
+    // fallback for accounts created before that column existed.
+    const nin = ninInput?.trim() || profile.verified_nin;
+    if (!nin) {
+      return json({ error: "nin is required" }, { status: 400 });
     }
 
     const pvRes = await fetch(`${PAYVESSEL_BASE_URL}/pms/api/external/request/customerReservedAccount/`, {
