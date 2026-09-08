@@ -88,6 +88,10 @@ export interface VerifyBvnResult {
   verified: boolean;
   reason?: string;
   matchPercentage?: number | null;
+  // Only ever set by verifyNin (Basic NIN Verification treats a phone
+  // mismatch as a soft warning, not a hard block -- see
+  // payvessel-verify-nin's header comment for why).
+  phoneWarning?: string | null;
 }
 
 export async function verifyBvn(input: VerifyBvnInput): Promise<VerifyBvnResult> {

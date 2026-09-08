@@ -131,11 +131,19 @@ Deno.serve(async (req) => {
     if (!genderMatch) {
       return json({ verified: false, reason: "The gender you entered doesn't match this NIN's records." });
     }
-    if (!phoneMatch) {
-      return json({ verified: false, reason: "The phone number you entered doesn't match this NIN's records." });
-    }
 
-    return json({ verified: true, matchPercentage: data.names_match_percentage ?? null });
+    // Phone number is a soft check, not a hard block: NIMC's phone field is
+    // frequently stale (people change SIM numbers over the years; the NIN
+    // record isn't auto-updated), so rejecting signup on this alone locks
+    // out real users even when name/DOB/gender all genuinely match. Name,
+    // DOB, and gender still must match exactly -- only phone is relaxed.
+    return json({
+      verified: true,
+      matchPercentage: data.names_match_percentage ?? null,
+      phoneWarning: !phoneMatch
+        ? "The phone number you entered doesn't match this NIN's records. You can still continue, but double check it's correct."
+        : null,
+    });
   } catch (err) {
     return json({ verified: false, reason: (err as Error).message }, { status: 500 });
   }

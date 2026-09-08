@@ -61,9 +61,38 @@ const VTPASS_PUBLIC_KEY = Deno.env.get("VTPASS_PUBLIC_KEY") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+// VTpass's LIVE API rejects calls with "IP NOT WHITELISTED, CONTACT
+// SUPPORT" (code 027) unless they come from a fixed IP -- but Supabase
+// Edge Functions run on Deno Deploy's globally distributed infra with no
+// static outbound IP of their own (confirmed against Supabase's own docs:
+// "Why Supabase Edge Functions cannot provide static egress IPs for
+// whitelisting"). So every VTpass call here is routed through a dedicated
+// proxy with one fixed IP instead, and THAT IP is what's whitelisted with
+// VTpass. Credentials are read from secrets, never hardcoded, exactly like
+// PAYVESSEL_API_KEY etc. -- set with:
+//   supabase secrets set VTPASS_PROXY_HOST=... VTPASS_PROXY_PORT=...
+//   supabase secrets set VTPASS_PROXY_USERNAME=... VTPASS_PROXY_PASSWORD=...
+// If any of these aren't set, calls fall back to going out directly
+// (unproxied) -- fine for sandbox, but live calls will keep failing with
+// error 027 until all four are set.
+const VTPASS_PROXY_HOST = Deno.env.get("VTPASS_PROXY_HOST") ?? "";
+const VTPASS_PROXY_PORT = Deno.env.get("VTPASS_PROXY_PORT") ?? "";
+const VTPASS_PROXY_USERNAME = Deno.env.get("VTPASS_PROXY_USERNAME") ?? "";
+const VTPASS_PROXY_PASSWORD = Deno.env.get("VTPASS_PROXY_PASSWORD") ?? "";
+
+const proxyClient =
+  VTPASS_PROXY_HOST && VTPASS_PROXY_PORT && VTPASS_PROXY_USERNAME && VTPASS_PROXY_PASSWORD
+    ? Deno.createHttpClient({
+        proxy: {
+          url: `http://${VTPASS_PROXY_USERNAME}:${VTPASS_PROXY_PASSWORD}@${VTPASS_PROXY_HOST}:${VTPASS_PROXY_PORT}`,
+        },
+      })
+    : undefined;
+
 async function vget(path: string) {
   const res = await fetch(`${VTPASS_BASE_URL}${path}`, {
     headers: { "api-key": VTPASS_API_KEY, "public-key": VTPASS_PUBLIC_KEY },
+    client: proxyClient,
   });
   return res.json();
 }
@@ -77,6 +106,7 @@ async function vpost(path: string, body: unknown) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
+    client: proxyClient,
   });
   return res.json();
 }
@@ -300,7 +330,15 @@ Deno.serve(async (req) => {
         ? `${body.quantity ?? 1} pin(s)`
         : `To ${body.phone ?? "recipient"}`;
 
+    // Logged so the raw VTpass response is retrievable from Supabase's
+    // function logs -- needed to see the REAL failure reason when it
+    // doesn't come back in the normal { code, response_description,
+    // content } shape (e.g. a live-account auth/IP-whitelist rejection),
+    // which otherwise silently falls through to the generic "Purchase
+    // failed" message below.
+    console.log("vtpass-purchase: outgoing /pay request", JSON.stringify(payBody));
     const payJson = await vpost("/pay", payBody);
+    console.log("vtpass-purchase: raw VTpass response", JSON.stringify(payJson));
     const success = payJson?.code === "000" && payJson?.content?.transactions?.status === "delivered";
 
     if (success) {
@@ -338,3 +376,7 @@ Deno.serve(async (req) => {
     return json({ error: (err as Error).message }, { status: 500 });
   }
 });
+
+
+
+supabase secrets set RESEND_API_KEY=xxx RESEND_FROM_EMAIL="MHU Global <noreply@mhuglobal.com>" --project-ref hkgbmcatbsdviasmrube

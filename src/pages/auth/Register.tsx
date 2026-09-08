@@ -9,7 +9,7 @@ import * as payvessel from "../../lib/payvessel";
 
 export default function Register() {
   const navigate = useNavigate();
-  const { signUp } = useAuth();
+  const { signUp, sendSignupOtp } = useAuth();
   const [form, setForm] = useState({
     firstName: "",
     middleName: "",
@@ -42,7 +42,7 @@ export default function Register() {
       // logic. Switched from BVN to NIN (Sept 2026) after BVN
       // verification kept returning genuine "name doesn't match" results.
       if (!form.gender) throw new Error("Select a gender");
-      const { verified, reason } = await payvessel.verifyNin({
+      const { verified, reason, phoneWarning } = await payvessel.verifyNin({
         nin: form.nin,
         firstName: form.firstName,
         middleName: form.middleName,
@@ -60,7 +60,7 @@ export default function Register() {
       // confirmed to match, use exactly what was typed.
       const fullName = `${form.firstName} ${form.lastName}`.trim();
       const verifiedPhone = form.phone;
-      const { error: signUpError, needsVerification } = await signUp({
+      const { error: signUpError, needsVerification, userId } = await signUp({
         fullName,
         email: form.email,
         phone: verifiedPhone,
@@ -69,17 +69,34 @@ export default function Register() {
       });
       if (signUpError) throw new Error(signUpError);
 
-      // Supabase sends the "Confirm signup" email itself as part of signUp()
-      // above — nothing to trigger manually here. If a session came back
-      // immediately (email confirmation disabled on the project), skip
-      // straight to the dashboard instead of a verify screen with nothing
-      // to verify.
-      if (!needsVerification) {
+      // If a session came back immediately (email confirmation disabled on
+      // the project), skip straight to the dashboard instead of a verify
+      // screen with nothing to verify.
+      if (!needsVerification || !userId) {
         navigate("/dashboard");
         return;
       }
 
-      navigate("/verify-otp", { state: { email: form.email, fullName, phone: verifiedPhone } });
+      // Kick off the first verification code now, over email by default —
+      // VerifyOtp.tsx lets the user switch to SMS from there if they'd
+      // rather (or didn't get the email).
+      const { error: otpError } = await sendSignupOtp({
+        userId,
+        email: form.email,
+        phone: verifiedPhone,
+        channel: "email",
+      });
+      if (otpError) throw new Error(otpError);
+
+      navigate("/verify-otp", {
+        state: {
+          email: form.email,
+          phone: verifiedPhone,
+          password: form.password,
+          userId,
+          notice: phoneWarning || undefined,
+        },
+      });
     } catch (err) {
       setError((err as Error).message);
     } finally {

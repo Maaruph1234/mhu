@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabaseClient";
+import { supabase, extractFunctionErrorMessage } from "../lib/supabaseClient";
 import { isDemoMode } from "../lib/demoMode";
 import { DEMO_PROFILE } from "../lib/demoProfile";
 import type { Profile } from "../types";
@@ -10,8 +10,9 @@ interface AuthContextValue {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
-  signUp: (input: { fullName: string; email: string; phone: string; password: string; referredBy?: string }) => Promise<{ error?: string; needsVerification?: boolean }>;
-  resendVerification: (email: string) => Promise<{ error?: string }>;
+  signUp: (input: { fullName: string; email: string; phone: string; password: string; referredBy?: string }) => Promise<{ error?: string; needsVerification?: boolean; userId?: string }>;
+  sendSignupOtp: (input: { userId: string; email: string; phone: string; channel: "email" | "sms" }) => Promise<{ error?: string }>;
+  verifySignupOtp: (input: { userId: string; code: string; email: string; password: string }) => Promise<{ error?: string }>;
   signIn: (input: { email: string; password: string }) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -72,14 +73,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // Signup verification: Supabase Auth's own "Confirm signup" email, sent
-  // automatically by signUp() below — no edge function or third-party email
-  // service needed. The email contains a confirmation LINK (not a typed
-  // code): clicking it activates the account and redirects back into the
-  // app already signed in (supabase-js picks up the session from the URL
-  // automatically). This works out of the box on Supabase's default email
-  // service — no custom SMTP required. Regular login (signIn, below) stays
-  // plain email+password, unaffected.
+  // Signup verification: a custom dual-channel OTP, NOT Supabase Auth's
+  // built-in "Confirm signup" email/link. That built-in token can only ever
+  // go out over whichever single channel Supabase's email settings are
+  // wired to (Resend, via custom SMTP) — there's no way to also push the
+  // identical token over SMS. So instead: signUp() below creates the
+  // account as usual (still unconfirmed), then the caller (Register.tsx)
+  // triggers sendSignupOtp() to generate and deliver OUR OWN 6-digit code
+  // via whichever channel it asks for (email via Resend, sms via SMSala —
+  // see supabase/functions/send-signup-otp). "Resend via the other
+  // channel" is just calling sendSignupOtp() again with a different
+  // channel. verifySignupOtp() checks that code and confirms the account
+  // server-side; since confirming via the Admin API doesn't hand back a
+  // session, it finishes by calling signInWithPassword itself using the
+  // password the user already typed on the signup form. Regular login
+  // (signIn, below) stays plain email+password, unaffected.
   const signUp: AuthContextValue["signUp"] = async ({ fullName, email, phone, password, referredBy }) => {
     if (isDemoMode) {
       setSession(DEMO_SESSION);
@@ -91,24 +99,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
       options: {
         data: { full_name: fullName, phone, referred_by: referredBy },
-        emailRedirectTo: `${window.location.origin}/dashboard`,
       },
     });
     if (error) return { error: error.message };
-    // No session back means Supabase is holding this account pending email
-    // confirmation — that's the normal case; the user needs to click the
-    // link in their inbox before they have a session.
-    return { needsVerification: !data.session };
+    // No session back means Supabase is holding this account pending
+    // confirmation — that's the normal case; the user needs to enter the
+    // OTP code (sent separately via sendSignupOtp) before they have a
+    // session.
+    return { needsVerification: !data.session, userId: data.user?.id };
   };
 
-  const resendVerification: AuthContextValue["resendVerification"] = async (email) => {
+  const sendSignupOtp: AuthContextValue["sendSignupOtp"] = async ({ userId, email, phone, channel }) => {
     if (isDemoMode) return {};
-    const { error } = await supabase.auth.resend({
-      type: "signup",
-      email,
-      options: { emailRedirectTo: `${window.location.origin}/dashboard` },
+    const { error } = await supabase.functions.invoke("send-signup-otp", {
+      body: { user_id: userId, email, phone, channel },
     });
-    return { error: error?.message };
+    if (error) return { error: await extractFunctionErrorMessage(error) };
+    return {};
+  };
+
+  // Verifies the 6-digit code the user typed in on VerifyOtp.tsx, via our
+  // own verify-signup-otp edge function (not supabase.auth.verifyOtp —
+  // this code was never a Supabase Auth token to begin with). On success
+  // the edge function has already confirmed the account server-side, so
+  // finish by actually signing in with the password from the signup form —
+  // this fires onAuthStateChange same as any normal login, which loads/
+  // creates the profile row automatically.
+  const verifySignupOtp: AuthContextValue["verifySignupOtp"] = async ({ userId, code, email, password }) => {
+    if (isDemoMode) return {};
+    const { error } = await supabase.functions.invoke("verify-signup-otp", {
+      body: { user_id: userId, code },
+    });
+    if (error) return { error: await extractFunctionErrorMessage(error) };
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    return { error: signInError?.message };
   };
 
   const signIn: AuthContextValue["signIn"] = async ({ email, password }) => {
@@ -153,7 +177,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       loading,
       signUp,
-      resendVerification,
+      sendSignupOtp,
+      verifySignupOtp,
       signIn,
       signOut,
       refreshProfile,
