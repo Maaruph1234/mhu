@@ -24,15 +24,31 @@
 // name; if verification always fails, log the actual header the first real
 // webhook delivery arrives with and adjust the header name checked here.
 //
-// Event used: `reserved_account.credit` (per
-// docs.payvessel.com/api-reference/webhook/supported-events), fired when a
-// customer transfer lands in a virtual account. Payvessel's docs don't
-// publish a full example payload for this specific event (only a generic
-// transaction.success shape), so the field paths below are read
-// defensively across a few plausible shapes and the FULL raw payload is
-// logged on every call -- check your function logs after your first real
-// sandbox test transfer and tighten the field paths if something doesn't
-// match.
+// Reserved-account credit (inbound bank transfer): confirmed from REAL
+// production webhook deliveries on 2026-09-10 (via function logs) that
+// this payload has NO "event" field at all -- unlike the
+// "reserved_account.credit" shape guessed from Payvessel's generic docs
+// (which don't actually document this event's payload). It's detected
+// instead by the presence of virtualAccount/transaction/order, which is
+// how these payloads identify themselves. Real confirmed example:
+//   {"transaction":{"date":"...","reference":"1000332...PP","external_reference":"...","sessionid":"..."},
+//    "order":{"currency":"NGN","amount":"1500","fee":"15.00","description":"...","settlement_amount":"1485.00"},
+//    "customer":{"email":"...","phone":"..."},
+//    "virtualAccount":{"virtualAccountNumber":"6656640533","virtualBank":"999991"},
+//    "sender":{"senderAccountNumber":"...","senderBankName":"...","senderName":"...","SenderBankCode":null},
+//    "message":"Success","code":"00"}
+// Matched to our account by virtualAccount.virtualAccountNumber against
+// payvessel_accounts.account_number (there's no trackingReference in this
+// real shape at all, despite that being what the old guessed code kept
+// looking for). Credited on the gross order.amount (matches what
+// FundWallet shows the user, same as the old guessed logic did) --
+// order.fee/settlement_amount is Payvessel's own collection fee, absorbed
+// by the business rather than passed to the user.
+//
+// The full raw payload is still logged on every call so any future shape
+// mismatch (e.g. for transfer.success/issuing.* events, which haven't been
+// seen for real yet and still rely on the guessed "event"-keyed shape
+// below) is diagnosable the same way this one was.
 //
 // Also handles virtual-card issuing events (docs.payvessel.com/virtual-
 // cards/webhooks): `issuing.created.successful` / `issuing.created.failed`
@@ -114,6 +130,86 @@ Deno.serve(async (req) => {
     console.log("payvessel-webhook payload:", JSON.stringify(payload));
 
     const service = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // --- reserved account credit (inbound bank transfer) ---
+    // Checked first, by field presence rather than an "event" key -- see
+    // the header comment above for why. Real deliveries confirmed
+    // code: "00" / message: "Success" on the successful ones; treated
+    // defensively as the only acceptable "this is a real credit" signal.
+    {
+      const virtualAccountNumber = pick(payload, [
+        ["virtualAccount", "virtualAccountNumber"],
+      ]) as string | undefined;
+      const txnReference = pick(payload, [["transaction", "reference"]]) as string | undefined;
+      const orderAmount = pick(payload, [["order", "amount"]]) as string | undefined;
+
+      if (virtualAccountNumber && txnReference && orderAmount) {
+        const amount = Number(orderAmount);
+        if (payload?.code !== "00" || !amount || amount <= 0) {
+          console.log("payvessel-webhook: credit-shaped payload but not a successful credit", payload);
+          return new Response(JSON.stringify({ status: "ignored: not a successful credit" }), {
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        const { data: account } = await service
+          .from("payvessel_accounts")
+          .select("user_id")
+          .eq("account_number", virtualAccountNumber)
+          .maybeSingle();
+
+        if (!account) {
+          console.error("payvessel-webhook: unknown virtual account", virtualAccountNumber);
+          return new Response(JSON.stringify({ error: "Unknown virtual account" }), { status: 404 });
+        }
+
+        // Idempotency: skip if this reference has already been recorded --
+        // also what makes it safe to backfill missed deliveries by hand.
+        const { data: dupe } = await service
+          .from("transactions")
+          .select("id")
+          .eq("reference", txnReference)
+          .maybeSingle();
+        if (dupe) {
+          return new Response(JSON.stringify({ status: "already processed" }), {
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        const { data: userRow } = await service
+          .from("users")
+          .select("wallet_balance")
+          .eq("id", account.user_id)
+          .single();
+        if (userRow) {
+          await service
+            .from("users")
+            .update({ wallet_balance: Number(userRow.wallet_balance ?? 0) + amount })
+            .eq("id", account.user_id);
+        }
+
+        const senderName = pick(payload, [["sender", "senderName"]]) as string | undefined;
+        const senderBank = pick(payload, [["sender", "senderBankName"]]) as string | undefined;
+        const subtitle = senderName ? `From ${senderName}${senderBank ? ` (${senderBank})` : ""}` : "Bank transfer";
+
+        const { error: txnError } = await service.from("transactions").insert({
+          user_id: account.user_id,
+          type: "fund_wallet",
+          amount,
+          status: "successful",
+          reference: txnReference,
+          title: "Wallet funded via bank transfer",
+          subtitle,
+        });
+        if (txnError) {
+          console.error("Failed to insert transaction record:", txnError);
+        }
+
+        return new Response(JSON.stringify({ status: "ok", txnLogError: txnError?.message }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // --- payout (Transfer to bank) resolving ---
     if (payload?.event === "transfer.success" || payload?.event === "transfer.failed" || payload?.event === "transfer.reversed") {
@@ -291,89 +387,11 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ status: "ok" }), { headers: { "Content-Type": "application/json" } });
     }
 
-    if (payload?.event !== "reserved_account.credit") {
-      // Anything else: nothing to credit.
-      return new Response(JSON.stringify({ status: "ok" }), { headers: { "Content-Type": "application/json" } });
-    }
-
-    const amount = Number(
-      pick(payload, [["data", "amount"], ["amount"], ["data", "transaction", "amount"]]) ?? 0
-    );
-    const reference =
-      (pick(payload, [
-        ["data", "reference"],
-        ["reference"],
-        ["data", "transaction", "reference"],
-      ]) as string | undefined) ?? `PV-${Date.now()}`;
-    const trackingReference = pick(payload, [
-      ["data", "trackingReference"],
-      ["data", "tracking_reference"],
-      ["trackingReference"],
-      ["data", "account", "trackingReference"],
-    ]) as string | undefined;
-
-    if (!trackingReference || !amount || amount <= 0) {
-      console.error("payvessel-webhook: missing trackingReference or amount", payload);
-      return new Response(JSON.stringify({ error: "Missing trackingReference or amount" }), { status: 400 });
-    }
-
-    const { data: account } = await service
-      .from("payvessel_accounts")
-      .select("user_id")
-      .eq("tracking_reference", trackingReference)
-      .maybeSingle();
-
-    if (!account) {
-      return new Response(JSON.stringify({ error: "Unknown virtual account" }), { status: 404 });
-    }
-
-    // Idempotency: skip if this reference has already been recorded.
-    const { data: dupe } = await service
-      .from("transactions")
-      .select("id")
-      .eq("reference", reference)
-      .maybeSingle();
-    if (dupe) {
-      return new Response(JSON.stringify({ status: "already processed" }), {
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    const { data: userRow } = await service
-      .from("users")
-      .select("wallet_balance")
-      .eq("id", account.user_id)
-      .single();
-
-    if (userRow) {
-      await service
-        .from("users")
-        .update({ wallet_balance: Number(userRow.wallet_balance ?? 0) + amount })
-        .eq("id", account.user_id);
-    }
-
-    const payerName = pick(payload, [
-      ["data", "payer", "account_name"],
-      ["data", "sender_name"],
-    ]) as string | undefined;
-    const subtitle = payerName ? `From ${payerName}` : "Bank transfer";
-
-    const { error: txnError } = await service.from("transactions").insert({
-      user_id: account.user_id,
-      type: "fund_wallet",
-      amount,
-      status: "successful",
-      reference,
-      title: "Wallet funded via bank transfer",
-      subtitle,
-    });
-    if (txnError) {
-      console.error("Failed to insert transaction record:", txnError);
-    }
-
-    return new Response(JSON.stringify({ status: "ok", txnLogError: txnError?.message }), {
-      headers: { "Content-Type": "application/json" },
-    });
+    // Anything else we don't recognize (or a future event whose real shape
+    // hasn't been confirmed yet): nothing to credit, but still 200 so
+    // Payvessel doesn't retry forever. Check the logged raw payload above
+    // if something expected isn't being handled.
+    return new Response(JSON.stringify({ status: "ok" }), { headers: { "Content-Type": "application/json" } });
   } catch (err) {
     return new Response(JSON.stringify({ error: (err as Error).message }), { status: 500 });
   }
