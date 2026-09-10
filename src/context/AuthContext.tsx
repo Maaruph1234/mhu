@@ -84,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // confirmation email even when the account is left unconfirmed, which is
   // exactly what was confusing users: they'd get that native link email
   // (not ours), click it, and land on the homepage with nothing actually
-  // verified, instead of ever seeing the 6-digit code screen. Admin
+  // verified, instead of ever seeing the 8-digit code screen. Admin
   // createUser sends no email of its own, so the ONLY email/SMS a user
   // gets now is the one sendSignupOtp() below triggers explicitly.
   // verifySignupOtp() checks that code and confirms the account
@@ -117,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return {};
   };
 
-  // Verifies the 6-digit code the user typed in on VerifyOtp.tsx, via our
+  // Verifies the 8-digit code the user typed in on VerifyOtp.tsx, via our
   // own verify-signup-otp edge function (not supabase.auth.verifyOtp —
   // this code was never a Supabase Auth token to begin with). On success
   // the edge function has already confirmed the account server-side, so

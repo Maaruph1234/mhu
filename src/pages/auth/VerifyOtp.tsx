@@ -67,13 +67,13 @@ export default function VerifyOtp() {
   return (
     <AuthLayout
       title="Verify your account"
-      subtitle={email ? `We sent a 6-digit code to ${email}` : "We sent you a verification code"}
+      subtitle={email ? `We sent an 8-digit code to ${email}` : "We sent you a verification code"}
     >
       <div className="space-y-6 text-center">
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-accent/10 text-accent">
           <Mail size={28} />
         </div>
-        <p className="text-sm text-slate-500">Enter the 6-digit code to activate your account.</p>
+        <p className="text-sm text-slate-500">Enter the 8-digit code to activate your account.</p>
         {notice && (
           <p className="rounded-md bg-amber-400/10 px-3 py-2 text-sm text-amber-500">{notice}</p>
         )}
@@ -81,10 +81,10 @@ export default function VerifyOtp() {
           <Input
             label="Verification code"
             inputMode="numeric"
-            maxLength={6}
-            placeholder="6-digit code"
+            maxLength={8}
+            placeholder="8-digit code"
             value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
             required
           />
           {error && <p className="text-sm text-red-400">{error}</p>}
@@ -93,7 +93,7 @@ export default function VerifyOtp() {
               Code resent via {resentChannel === "email" ? "email" : "SMS"}.
             </p>
           )}
-          <Button type="submit" fullWidth loading={verifying} disabled={code.trim().length !== 6}>
+          <Button type="submit" fullWidth loading={verifying} disabled={code.trim().length !== 8}>
             Verify
           </Button>
         </form>

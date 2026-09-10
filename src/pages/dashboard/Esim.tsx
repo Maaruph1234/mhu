@@ -28,21 +28,40 @@ export default function Esim() {
   const [regions, setRegions] = useState<EsimRegion[]>([]);
   const [locationCode, setLocationCode] = useState("");
   const [packages, setPackages] = useState<EsimPackage[]>([]);
-  const [loadingPackages, setLoadingPackages] = useState(false);
+  const [loadingPackages, setLoadingPackages] = useState(true);
   const [orders, setOrders] = useState<EsimOrder[]>([]);
   const [buying, setBuying] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Payvessel's /esim/packages endpoint has no "list everything" mode -- it
+  // 422s with "At least one filter is required" if location_code/
+  // package_code/slug are all omitted (confirmed against
+  // docs.payvessel.com/api-reference/esim/list-packages). This used to
+  // default locationCode to "" for an "All destinations" option and fire
+  // listPackages("" -> undefined) on first load, which 422d immediately --
+  // and since nothing cleared the stale error afterwards, it stuck around
+  // even once a real destination was picked, while the package list itself
+  // just silently stayed empty. Now: wait for regions to load, default to
+  // the first one, and only load packages once there's an actual code to
+  // filter by (matches the Flutter app's already-fixed CheckEmailScreen
+  // equivalent, buy_airtime/esim_screen.dart).
   useEffect(() => {
-    esim.listRegions().then((list) => setRegions(flattenRegions(list)));
+    esim.listRegions().then((list) => {
+      const flat = flattenRegions(list);
+      setRegions(flat);
+      if (flat.length) setLocationCode(flat[0].code);
+    });
     esim.listOrders().then(setOrders);
   }, []);
 
   useEffect(() => {
+    if (!locationCode) return;
     setLoadingPackages(true);
+    setError(null);
+    setSuccess(null);
     esim
-      .listPackages(locationCode || undefined)
+      .listPackages(locationCode)
       .then(setPackages)
       .catch((err) => setError((err as Error).message))
       .finally(() => setLoadingPackages(false));
@@ -80,7 +99,7 @@ export default function Esim() {
           onChange={(e) => setLocationCode(e.target.value)}
           className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20"
         >
-          <option value="">All destinations</option>
+          {!regions.length && <option value="">Loading destinations…</option>}
           {regions.map((r) => (
             <option key={r.code} value={r.code}>
               {r.name}

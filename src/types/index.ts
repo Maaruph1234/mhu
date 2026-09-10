@@ -285,6 +285,8 @@ export interface Network {
   id: string;
   name: string;
   color: string;
+  /** Path to the network's logo image (public/networks/*.png), if available. */
+  logo?: string;
 }
 
 export interface DataPlan {
@@ -299,6 +301,7 @@ export interface DataPlan {
 export interface TvProvider {
   id: string;
   name: string;
+  logo?: string;
 }
 
 export interface TvPlan {

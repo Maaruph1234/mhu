@@ -3,6 +3,7 @@ import { Send } from "lucide-react";
 import { Card } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
+import { SearchableSelect } from "../../components/ui/SearchableSelect";
 import { supabase } from "../../lib/supabaseClient";
 import { useWallet } from "../../context/WalletContext";
 import { formatCurrency } from "../../lib/format";
@@ -222,26 +223,18 @@ function TransferToBank({ onDone }: { onDone: () => Promise<void> }) {
         </p>
       )}
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <p className="mb-1.5 text-sm font-medium text-slate-600">Bank</p>
-          <select
-            value={bankCode}
-            onChange={(e) => {
-              setBankCode(e.target.value);
-              setAccountName("");
-            }}
-            disabled={loadingBanks || !banks.length}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20"
-          >
-            {loadingBanks && <option>Loading banks…</option>}
-            {!loadingBanks && !banks.length && <option>No banks available</option>}
-            {banks.map((b) => (
-              <option key={b.code} value={b.code}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <SearchableSelect
+          label="Bank"
+          value={bankCode}
+          onChange={(v) => {
+            setBankCode(v);
+            setAccountName("");
+          }}
+          loading={loadingBanks}
+          disabled={!banks.length}
+          placeholder={banks.length ? "Select a bank" : "No banks available"}
+          options={banks.map((b) => ({ value: b.code, label: b.name }))}
+        />
         <Input
           label="Account number"
           placeholder="10-digit account number"

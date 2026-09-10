@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Wifi } from "lucide-react";
 import clsx from "clsx";
 import { Card } from "../../components/ui/Card";
@@ -8,6 +8,7 @@ import { NetworkPicker } from "../../components/ui/NetworkPicker";
 import { NETWORKS } from "../../data/reference";
 import { purchase, getVariations } from "../../lib/vtpass";
 import type { VtpassVariation } from "../../lib/vtpass";
+import { DATA_CATEGORY_ORDER, groupByCategory, type DataPlanCategory } from "../../lib/dataPlanCategories";
 import { useWallet } from "../../context/WalletContext";
 import { formatCurrency } from "../../lib/format";
 
@@ -18,6 +19,7 @@ export default function Data() {
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [plansError, setPlansError] = useState<string | null>(null);
   const [planId, setPlanId] = useState<string | null>(null);
+  const [category, setCategory] = useState<DataPlanCategory | null>(null);
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +37,23 @@ export default function Data() {
       .finally(() => setLoadingPlans(false));
   }, [network]);
 
+  // Sorted into billing-cycle/purpose buckets (Daily, Social, Broadband,
+  // MTN's XtraValue bundles, etc. -- see dataPlanCategories.ts) instead of
+  // one long flat list, matching the Flutter app's Buy Data screen.
+  const groupedPlans = useMemo(() => groupByCategory(plans, network), [plans, network]);
+  const availableCategories = useMemo(
+    () => DATA_CATEGORY_ORDER.filter((c) => groupedPlans[c]?.length),
+    [groupedPlans]
+  );
+
+  useEffect(() => {
+    setCategory((current) => {
+      if (current && availableCategories.includes(current)) return current;
+      return availableCategories[0] ?? null;
+    });
+  }, [availableCategories]);
+
+  const visiblePlans = category ? groupedPlans[category] ?? [] : plans;
   const selectedPlan = plans.find((p) => p.code === planId) ?? null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -83,6 +102,14 @@ export default function Data() {
               }}
             />
           </div>
+          <Input
+            label="Phone number"
+            type="tel"
+            placeholder="080XXXXXXXX"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            required
+          />
           <div>
             <p className="mb-2 text-sm font-medium text-slate-600">Plan</p>
             {loadingPlans && <p className="text-sm text-slate-500">Loading plans…</p>}
@@ -92,32 +119,45 @@ export default function Data() {
               </p>
             )}
             {!loadingPlans && !plansError && (
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-                {plans.map((p) => (
-                  <button
-                    type="button"
-                    key={p.code}
-                    onClick={() => setPlanId(p.code)}
-                    className={clsx(
-                      "rounded-xl border px-3 py-3 text-left transition",
-                      planId === p.code ? "border-accent bg-accent/10" : "border-slate-200 hover:border-slate-300"
-                    )}
-                  >
-                    <p className="text-sm font-semibold text-slate-900">{p.name}</p>
-                    <p className="mt-1 text-xs font-medium text-accent">{formatCurrency(p.price)}</p>
-                  </button>
-                ))}
-              </div>
+              <>
+                {availableCategories.length > 1 && (
+                  <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+                    {availableCategories.map((c) => (
+                      <button
+                        type="button"
+                        key={c}
+                        onClick={() => setCategory(c)}
+                        className={clsx(
+                          "shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-medium transition",
+                          category === c
+                            ? "border-accent bg-accent text-white"
+                            : "border-slate-200 text-slate-600 hover:border-slate-300"
+                        )}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                  {visiblePlans.map((p) => (
+                    <button
+                      type="button"
+                      key={p.code}
+                      onClick={() => setPlanId(p.code)}
+                      className={clsx(
+                        "rounded-xl border px-3 py-3 text-left transition",
+                        planId === p.code ? "border-accent bg-accent/10" : "border-slate-200 hover:border-slate-300"
+                      )}
+                    >
+                      <p className="text-sm font-semibold text-slate-900">{p.name}</p>
+                      <p className="mt-1 text-xs font-medium text-accent">{formatCurrency(p.price)}</p>
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
           </div>
-          <Input
-            label="Phone number"
-            type="tel"
-            placeholder="080XXXXXXXX"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            required
-          />
           {error && <p className="text-sm text-red-400">{error}</p>}
           {success && <p className="text-sm text-emerald-400">{success}</p>}
           <Button type="submit" fullWidth loading={loading} icon={<Wifi size={16} />}>

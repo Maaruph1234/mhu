@@ -5,7 +5,7 @@
 -- are wired to (Resend, via custom SMTP, as of Sept 2026) -- there's no
 -- supported way to also push that exact same token out over SMS. So this
 -- decouples signup-code generation entirely from Supabase Auth: WE
--- generate the 6-digit code, hash it (bcrypt via pgcrypto, same pattern as
+-- generate the 8-digit code, hash it (bcrypt via pgcrypto, same pattern as
 -- pin_schema.sql's transaction_pin_hash), and hand the plaintext to
 -- whichever edge function call asked for it -- send-signup-otp then
 -- delivers it via Resend (email) or SMSala (SMS), and "resend via the
@@ -38,7 +38,7 @@ alter table public.signup_otps enable row level security;
 -- the service role, which bypasses RLS entirely. Nothing else should read
 -- or write it directly.
 
--- Generates a fresh 6-digit code for p_user_id, invalidates any earlier
+-- Generates a fresh 8-digit code for p_user_id, invalidates any earlier
 -- still-open code for that user (so only the most recently sent code is
 -- ever valid, no matter which channel it went out on), and returns the
 -- PLAINTEXT code so the calling edge function can hand it to Resend or
@@ -60,7 +60,7 @@ begin
     set consumed_at = now()
     where user_id = p_user_id and consumed_at is null;
 
-  v_code := lpad(floor(random() * 1000000)::text, 6, '0');
+  v_code := lpad(floor(random() * 100000000)::text, 8, '0');
 
   insert into public.signup_otps (user_id, code_hash, channel, expires_at)
   values (p_user_id, crypt(v_code, gen_salt('bf')), p_channel, now() + interval '10 minutes');
@@ -72,7 +72,7 @@ $$;
 -- Checks p_code against the latest still-open code for p_user_id. Codes
 -- expire after 10 minutes and lock out after 5 wrong attempts (the user
 -- has to hit resend for a fresh one past that point, rather than being
--- able to brute-force 6 digits).
+-- able to brute-force 8 digits).
 create or replace function public.verify_signup_otp(p_user_id uuid, p_code text)
 returns boolean
 language plpgsql
@@ -108,3 +108,10 @@ revoke all on function public.create_signup_otp(uuid, text) from public, anon, a
 revoke all on function public.verify_signup_otp(uuid, text) from public, anon, authenticated;
 grant execute on function public.create_signup_otp(uuid, text) to service_role;
 grant execute on function public.verify_signup_otp(uuid, text) to service_role;
+
+-- Same fix as fix_pin_pgcrypto_schema.sql: Supabase installs pgcrypto into
+-- the `extensions` schema, not `public`, so a function declared with only
+-- `set search_path = public` can't actually find gen_salt()/crypt() --
+-- widen the search path so it does, wherever the extension landed.
+alter function public.create_signup_otp(uuid, text) set search_path = public, extensions;
+alter function public.verify_signup_otp(uuid, text) set search_path = public, extensions;

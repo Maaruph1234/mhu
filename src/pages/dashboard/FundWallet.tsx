@@ -17,6 +17,12 @@ export default function FundWallet() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
   const [bvn, setBvn] = useState("");
+  const [nin, setNin] = useState("");
+  // Only revealed if the backend comes back with "nin is required" --
+  // happens for accounts created before store_verified_nin.sql existed, so
+  // there's nothing on file yet to reuse. Rather than leaving the user
+  // stuck on a raw server error, let them fill it in this one time.
+  const [needsNin, setNeedsNin] = useState(false);
 
   useEffect(() => {
     if (isDemoMode) {
@@ -55,16 +61,28 @@ export default function FundWallet() {
       setCreateError("Enter a valid 11-digit BVN");
       return;
     }
+    if (needsNin && nin.length !== 11) {
+      setCreateError("Enter your 11-digit NIN");
+      return;
+    }
     setCreating(true);
     try {
-      // NIN isn't asked for here -- it's already on file from the one
-      // verified at signup (see store_verified_nin.sql). If somehow
-      // missing (an account from before that existed), the edge function
-      // returns a clear error rather than silently failing.
-      const created = await payvessel.createAccount({ bvn });
+      // NIN isn't asked for here by default -- it's already on file from
+      // the one verified at signup (see store_verified_nin.sql). Accounts
+      // created before that existed won't have one on file though, so the
+      // edge function returns a clear "nin is required" error for those --
+      // caught below to reveal the NIN field as a one-time fallback instead
+      // of leaving the user stuck on a raw server error.
+      const created = await payvessel.createAccount({ bvn, ...(needsNin ? { nin } : {}) });
       setAccount(created);
     } catch (err) {
-      setCreateError((err as Error).message);
+      const message = (err as Error).message;
+      if (!needsNin && message.toLowerCase().includes("nin")) {
+        setNeedsNin(true);
+        setCreateError("We don't have a NIN on file for this account yet — enter it below to continue.");
+      } else {
+        setCreateError(message);
+      }
     } finally {
       setCreating(false);
     }
@@ -98,6 +116,15 @@ export default function FundWallet() {
               onChange={(e) => setBvn(e.target.value)}
               maxLength={11}
             />
+            {needsNin && (
+              <Input
+                label="NIN"
+                placeholder="11-digit NIN"
+                value={nin}
+                onChange={(e) => setNin(e.target.value)}
+                maxLength={11}
+              />
+            )}
             {createError && <p className="text-xs text-red-500">{createError}</p>}
             <Button fullWidth loading={creating} onClick={handleCreateAccount}>
               Generate my funding account

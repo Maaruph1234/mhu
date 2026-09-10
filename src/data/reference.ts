@@ -7,10 +7,10 @@ import type { Network, DataPlan, TvProvider, TvPlan, Disco, ExamBody } from "../
 // entries below are placeholders to build the UI against.
 
 export const NETWORKS: Network[] = [
-  { id: "mtn", name: "MTN", color: "#FFCB05" },
-  { id: "airtel", name: "Airtel", color: "#FF0000" },
-  { id: "glo", name: "Glo", color: "#00A651" },
-  { id: "9mobile", name: "9mobile", color: "#00A99D" },
+  { id: "mtn", name: "MTN", color: "#FFCB05", logo: "/networks/mtn.png" },
+  { id: "airtel", name: "Airtel", color: "#FF0000", logo: "/networks/airtel.png" },
+  { id: "glo", name: "Glo", color: "#00A651", logo: "/networks/glo.png" },
+  { id: "9mobile", name: "9mobile", color: "#00A99D", logo: "/networks/9mobile.png" },
 ];
 
 export const DATA_PLANS: DataPlan[] = [
@@ -24,9 +24,9 @@ export const DATA_PLANS: DataPlan[] = [
 ];
 
 export const TV_PROVIDERS: TvProvider[] = [
-  { id: "dstv", name: "DStv" },
-  { id: "gotv", name: "GOtv" },
-  { id: "startimes", name: "StarTimes" },
+  { id: "dstv", name: "DStv", logo: "/tv/dstv.png" },
+  { id: "gotv", name: "GOtv", logo: "/tv/gotv.png" },
+  { id: "startimes", name: "StarTimes", logo: "/tv/startimes.png" },
 ];
 
 export const TV_PLANS: TvPlan[] = [

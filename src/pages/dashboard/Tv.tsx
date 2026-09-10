@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Tv as TvIcon } from "lucide-react";
 import clsx from "clsx";
 import { Card } from "../../components/ui/Card";
@@ -7,6 +7,7 @@ import { Button } from "../../components/ui/Button";
 import { TV_PROVIDERS } from "../../data/reference";
 import { purchase, verifySmartcard, getVariations } from "../../lib/vtpass";
 import type { VtpassVariation } from "../../lib/vtpass";
+import { TV_CATEGORY_ORDER, groupByCategory, getHotOfferImage, type DataPlanCategory } from "../../lib/dataPlanCategories";
 import { useWallet } from "../../context/WalletContext";
 import { formatCurrency } from "../../lib/format";
 
@@ -19,6 +20,7 @@ export default function Tv() {
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [plansError, setPlansError] = useState<string | null>(null);
   const [planId, setPlanId] = useState<string | null>(null);
+  const [category, setCategory] = useState<DataPlanCategory | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +38,24 @@ export default function Tv() {
       .finally(() => setLoadingPlans(false));
   }, [provider]);
 
+  // Same grouping helper as the Data page -- for TV bouquets this mostly
+  // just sorts real duration-bearing plans (e.g. "3-Month") away from
+  // plain monthly ones; most bouquets have no duration wording at all and
+  // land in a single "Other" bucket, in which case no tabs show at all.
+  const groupedPlans = useMemo(() => groupByCategory(plans, provider), [plans, provider]);
+  const availableCategories = useMemo(
+    () => TV_CATEGORY_ORDER.filter((c) => groupedPlans[c]?.length),
+    [groupedPlans]
+  );
+
+  useEffect(() => {
+    setCategory((current) => {
+      if (current && availableCategories.includes(current)) return current;
+      return availableCategories[0] ?? null;
+    });
+  }, [availableCategories]);
+
+  const visiblePlans = category ? groupedPlans[category] ?? [] : plans;
   const selectedPlan = plans.find((p) => p.code === planId) ?? null;
 
   const handleVerify = async () => {
@@ -99,10 +119,11 @@ export default function Tv() {
                     setCustomerName(null);
                   }}
                   className={clsx(
-                    "rounded-xl border py-3 text-sm font-medium transition",
+                    "flex flex-col items-center gap-1.5 rounded-xl border py-3 text-sm font-medium transition",
                     provider === p.id ? "border-accent bg-accent/10 text-slate-900" : "border-slate-200 text-slate-600 hover:border-slate-300"
                   )}
                 >
+                  {p.logo && <img src={p.logo} alt={p.name} className="h-7 w-7 rounded object-cover" />}
                   {p.name}
                 </button>
               ))}
@@ -136,22 +157,73 @@ export default function Tv() {
               </p>
             )}
             {!loadingPlans && !plansError && (
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                {plans.map((p) => (
-                  <button
-                    type="button"
-                    key={p.code}
-                    onClick={() => setPlanId(p.code)}
-                    className={clsx(
-                      "flex items-center justify-between rounded-xl border px-4 py-3 text-left transition",
-                      planId === p.code ? "border-accent bg-accent/10" : "border-slate-200 hover:border-slate-300"
-                    )}
-                  >
-                    <span className="text-sm font-medium text-slate-900">{p.name}</span>
-                    <span className="text-xs font-semibold text-accent">{formatCurrency(p.price)}</span>
-                  </button>
-                ))}
-              </div>
+              <>
+                {availableCategories.length > 1 && (
+                  <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+                    {availableCategories.map((c) => (
+                      <button
+                        type="button"
+                        key={c}
+                        onClick={() => setCategory(c)}
+                        className={clsx(
+                          "shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-medium transition",
+                          category === c
+                            ? "border-accent bg-accent text-white"
+                            : "border-slate-200 text-slate-600 hover:border-slate-300"
+                        )}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                  {visiblePlans.map((p) => {
+                    // Hot Offers gets the user's own DStv promo images as
+                    // full-bleed banner cards; everything else (and any
+                    // Hot Offers plan we don't have an image for yet, e.g.
+                    // once GOtv/StarTimes picks are added) falls back to
+                    // the plain price row.
+                    const hotOfferImage = category === "Hot Offers" ? getHotOfferImage(p.name, provider) : null;
+                    if (hotOfferImage) {
+                      return (
+                        <button
+                          type="button"
+                          key={p.code}
+                          onClick={() => setPlanId(p.code)}
+                          className={clsx(
+                            "relative aspect-[16/9] overflow-hidden rounded-xl border text-left transition",
+                            planId === p.code ? "border-accent ring-2 ring-accent/40" : "border-slate-200 hover:border-slate-300"
+                          )}
+                        >
+                          <img src={hotOfferImage} alt={p.name} className="absolute inset-0 h-full w-full object-cover" />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+                          <div className="absolute inset-x-0 bottom-0 flex items-center justify-between p-3">
+                            <span className="text-sm font-semibold text-white drop-shadow">{p.name}</span>
+                            <span className="rounded-full bg-white/90 px-2.5 py-1 text-xs font-semibold text-slate-900">
+                              {formatCurrency(p.price)}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    }
+                    return (
+                      <button
+                        type="button"
+                        key={p.code}
+                        onClick={() => setPlanId(p.code)}
+                        className={clsx(
+                          "flex items-center justify-between rounded-xl border px-4 py-3 text-left transition",
+                          planId === p.code ? "border-accent bg-accent/10" : "border-slate-200 hover:border-slate-300"
+                        )}
+                      >
+                        <span className="text-sm font-medium text-slate-900">{p.name}</span>
+                        <span className="text-xs font-semibold text-accent">{formatCurrency(p.price)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
 

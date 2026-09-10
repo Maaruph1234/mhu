@@ -3,6 +3,7 @@ import { Plane, Plus, Trash2, ArrowRight, Clock, CheckCircle2 } from "lucide-rea
 import { Card, CardHeader, CardTitle } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
+import { SearchableSelect } from "../../components/ui/SearchableSelect";
 import { useAuth } from "../../context/AuthContext";
 import * as flights from "../../lib/flights";
 import type { FlightAirport, FlightOrder, FlightPassengerInput, FlightQuote, FlightSearchOption } from "../../types";
@@ -71,11 +72,30 @@ export default function FlightBooking() {
   const [orders, setOrders] = useState<FlightOrder[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingAirports, setLoadingAirports] = useState(true);
+  const [airportsError, setAirportsError] = useState<string | null>(null);
+
+  // Previously had no error handling at all -- if this call failed (network
+  // blip, Payvessel's flight API down, etc.) the airport list just silently
+  // stayed empty forever with nothing telling the user why the From/To
+  // pickers had nothing in them. Now surfaces the real error and offers a
+  // retry instead of a dead end.
+  const loadAirports = () => {
+    setLoadingAirports(true);
+    setAirportsError(null);
+    flights
+      .listAirports()
+      .then(setAirports)
+      .catch((err) => setAirportsError((err as Error).message))
+      .finally(() => setLoadingAirports(false));
+  };
 
   useEffect(() => {
-    flights.listAirports().then(setAirports);
+    loadAirports();
     flights.listOrders().then(setOrders);
   }, []);
+
+  const airportOptions = airports.map((a) => ({ value: a.airport_code, label: `${a.city} (${a.airport_code})` }));
 
   // Trip type controls how many itinerary legs are editable.
   const setTrip = (t: TripType) => {
@@ -212,6 +232,15 @@ export default function FlightBooking() {
               ))}
             </div>
 
+            {loadingAirports && <p className="text-sm text-slate-500">Loading airports…</p>}
+            {airportsError && !loadingAirports && (
+              <div className="flex items-center justify-between rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500">
+                <span>Couldn't load airports: {airportsError}</span>
+                <button type="button" onClick={loadAirports} className="font-medium text-accent hover:underline">
+                  Retry
+                </button>
+              </div>
+            )}
             <div className="space-y-3">
               {legs.map((leg, i) => (
                 <div key={i} className="rounded-xl border border-slate-200 p-3">
@@ -228,36 +257,24 @@ export default function FlightBooking() {
                     </div>
                   )}
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <p className="mb-1.5 text-sm font-medium text-slate-600">From</p>
-                      <select
-                        value={leg.from}
-                        onChange={(e) => updateLeg(i, { from: e.target.value })}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20"
-                      >
-                        <option value="">Select</option>
-                        {airports.map((a) => (
-                          <option key={a.airport_code} value={a.airport_code}>
-                            {a.city} ({a.airport_code})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <p className="mb-1.5 text-sm font-medium text-slate-600">To</p>
-                      <select
-                        value={leg.to}
-                        onChange={(e) => updateLeg(i, { to: e.target.value })}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20"
-                      >
-                        <option value="">Select</option>
-                        {airports.map((a) => (
-                          <option key={a.airport_code} value={a.airport_code}>
-                            {a.city} ({a.airport_code})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    <SearchableSelect
+                      label="From"
+                      value={leg.from}
+                      onChange={(v) => updateLeg(i, { from: v })}
+                      options={airportOptions}
+                      loading={loadingAirports}
+                      disabled={!airports.length}
+                      placeholder={airports.length ? "Select" : "Unavailable"}
+                    />
+                    <SearchableSelect
+                      label="To"
+                      value={leg.to}
+                      onChange={(v) => updateLeg(i, { to: v })}
+                      options={airportOptions}
+                      loading={loadingAirports}
+                      disabled={!airports.length}
+                      placeholder={airports.length ? "Select" : "Unavailable"}
+                    />
                   </div>
                   <Input
                     label="Departure date"

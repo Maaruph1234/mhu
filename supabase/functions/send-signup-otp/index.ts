@@ -1,7 +1,7 @@
 // Supabase Edge Function: send-signup-otp
 // Deploy with: supabase functions deploy send-signup-otp
 //
-// Generates a fresh 6-digit signup-verification code (via the
+// Generates a fresh 8-digit signup-verification code (via the
 // create_signup_otp RPC -- see supabase/signup_otp_schema.sql) and
 // delivers it through whichever channel the caller asks for:
 //   channel: "email" -> Resend's HTTP API (api.resend.com/emails)

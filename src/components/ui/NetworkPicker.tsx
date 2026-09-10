@@ -22,12 +22,16 @@ export function NetworkPicker({
             value === n.id ? "border-accent bg-accent/5" : "border-slate-200 hover:border-slate-300"
           )}
         >
-          <span
-            className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-slate-900"
-            style={{ backgroundColor: n.color }}
-          >
-            {n.name.slice(0, 2).toUpperCase()}
-          </span>
+          {n.logo ? (
+            <img src={n.logo} alt={n.name} className="h-9 w-9 rounded-full object-cover" />
+          ) : (
+            <span
+              className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-slate-900"
+              style={{ backgroundColor: n.color }}
+            >
+              {n.name.slice(0, 2).toUpperCase()}
+            </span>
+          )}
           <span className="text-xs font-medium text-slate-600">{n.name}</span>
         </button>
       ))}

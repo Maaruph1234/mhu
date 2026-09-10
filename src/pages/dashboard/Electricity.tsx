@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { Card } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
+import { SearchableSelect } from "../../components/ui/SearchableSelect";
 import { DISCOS } from "../../data/reference";
 import { purchase, verifyMeter } from "../../lib/vtpass";
 import { useWallet } from "../../context/WalletContext";
@@ -66,23 +67,15 @@ export default function Electricity() {
       </div>
       <Card>
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <p className="mb-2 text-sm font-medium text-slate-600">Distribution company</p>
-            <select
-              value={disco}
-              onChange={(e) => {
-                setDisco(e.target.value);
-                setCustomerName(null);
-              }}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20"
-            >
-              {DISCOS.map((d) => (
-                <option key={d.id} value={d.id} className="bg-white">
-                  {d.fullName} ({d.name})
-                </option>
-              ))}
-            </select>
-          </div>
+          <SearchableSelect
+            label="Distribution company"
+            value={disco}
+            onChange={(v) => {
+              setDisco(v);
+              setCustomerName(null);
+            }}
+            options={DISCOS.map((d) => ({ value: d.id, label: `${d.fullName} (${d.name})` }))}
+          />
 
           <div className="flex gap-2.5">
             {(["prepaid", "postpaid"] as const).map((t) => (
