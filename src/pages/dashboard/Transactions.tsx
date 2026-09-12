@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card } from "../../components/ui/Card";
 import { TransactionRow } from "../../components/ui/TransactionRow";
 import { ReceiptModal } from "../../components/ui/ReceiptModal";
 import { useWallet } from "../../context/WalletContext";
+import { checkTransferStatus } from "../../lib/payvessel";
 import type { Transaction, TransactionStatus } from "../../types";
 
 const FILTERS: Array<{ label: string; value: TransactionStatus | "all" }> = [
@@ -13,9 +14,30 @@ const FILTERS: Array<{ label: string; value: TransactionStatus | "all" }> = [
 ];
 
 export default function Transactions() {
-  const { transactions, loading } = useWallet();
+  const { transactions, loading, refresh } = useWallet();
   const [filter, setFilter] = useState<TransactionStatus | "all">("all");
   const [selected, setSelected] = useState<Transaction | null>(null);
+
+  // Bank transfers used to be resolved only by a webhook that (per
+  // payvessel-payout/index.ts's updated header comment) has never actually
+  // been observed firing for a real payout -- meaning a transfer could
+  // stay "pending" forever even after the money genuinely landed. This
+  // reconciles every pending bank transfer against Payvessel's real
+  // Transfer Status endpoint whenever the page loads, same fix as the app.
+  const checkedRef = useRef(new Set<string>());
+  useEffect(() => {
+    const pending = transactions.filter((t) => t.type === "bank_transfer_out" && t.status === "pending");
+    const toCheck = pending.filter((t) => !checkedRef.current.has(t.reference));
+    if (!toCheck.length) return;
+    toCheck.forEach((t) => checkedRef.current.add(t.reference));
+
+    (async () => {
+      const results = await Promise.all(
+        toCheck.map((t) => checkTransferStatus(t.reference).catch(() => "pending" as const))
+      );
+      if (results.some((r) => r !== "pending")) refresh();
+    })();
+  }, [transactions, refresh]);
 
   const filtered = filter === "all" ? transactions : transactions.filter((t) => t.status === filter);
 

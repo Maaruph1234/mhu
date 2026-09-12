@@ -153,9 +153,9 @@ export default function FundWallet() {
                 <Copy size={14} />
               </button>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-500">Account name</span>
-              <span className="font-medium text-slate-900">{virtualAccount.accountName}</span>
+            <div className="flex justify-between gap-3 text-sm">
+              <span className="shrink-0 text-slate-500">Account name</span>
+              <span className="break-words text-right font-medium text-slate-900">{virtualAccount.accountName}</span>
             </div>
           </div>
           {copied && <p className="mt-2 text-xs text-emerald-500">Account number copied.</p>}

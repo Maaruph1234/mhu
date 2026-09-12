@@ -13,11 +13,40 @@ const isCredit = (type: Transaction["type"]) =>
   type === "transfer_in" || type === "fund_wallet" || type === "referral_bonus" ||
   type === "card_withdraw" || type === "card_terminate";
 
-const statusMeta: Record<Transaction["status"], { label: string; icon: typeof CheckCircle2; className: string }> = {
-  successful: { label: "Successful", icon: CheckCircle2, className: "text-emerald-500 bg-emerald-50" },
-  pending: { label: "Pending", icon: Clock, className: "text-amber-500 bg-amber-50" },
-  failed: { label: "Failed", icon: XCircle, className: "text-red-500 bg-red-50" },
+const statusMeta: Record<Transaction["status"], { label: string; icon: typeof CheckCircle2; className: string; solid: string }> = {
+  successful: { label: "Successful", icon: CheckCircle2, className: "text-emerald-500 bg-emerald-50", solid: "bg-emerald-500" },
+  pending: { label: "Pending", icon: Clock, className: "text-amber-500 bg-amber-50", solid: "bg-amber-500" },
+  failed: { label: "Failed", icon: XCircle, className: "text-red-500 bg-red-50", solid: "bg-red-500" },
 };
+
+// "Transfer Successful" / "Purchase Pending" etc -- mirrored exactly in the
+// Flutter app's receipt_sheet.dart/receipt_generator.dart (_headline /
+// _subheadline) so a receipt reads the same on both platforms.
+function headline(tx: Transaction): string {
+  const statusWord = statusMeta[tx.status].label;
+  const action =
+    tx.type === "transfer_out" || tx.type === "bank_transfer_out"
+      ? "Transfer"
+      : tx.type === "transfer_in" || tx.type === "fund_wallet"
+      ? "Funding"
+      : "Purchase";
+  return `${action} ${statusWord}`;
+}
+
+function subheadline(tx: Transaction): string {
+  if (tx.status === "failed") return "This transaction didn't go through.";
+  if (tx.status === "pending") return "We're still confirming this transaction.";
+  if (tx.type === "transfer_out" || tx.type === "bank_transfer_out") return "Your money has been sent successfully.";
+  if (tx.type === "transfer_in" || tx.type === "fund_wallet") return "Your wallet has been credited successfully.";
+  return "Your purchase was completed successfully.";
+}
+
+function friendlyType(type: string): string {
+  return type
+    .split("_")
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
 
 export function ReceiptModal({ tx, onClose }: { tx: Transaction; onClose: () => void }) {
   const receiptRef = useRef<HTMLDivElement>(null);
@@ -96,42 +125,62 @@ export function ReceiptModal({ tx, onClose }: { tx: Transaction; onClose: () => 
         </div>
 
         <div className="max-h-[70vh] overflow-y-auto px-5 py-5">
-          <div ref={receiptRef} className="rounded-xl bg-white p-5">
-            <div className="flex flex-col items-center text-center">
+          <div ref={receiptRef} className="overflow-hidden rounded-xl bg-white">
+            {/* Header banner (letterhead) -- drops the wider services-icon
+                list and QR/app-store badges from the reference design: the
+                former needs more width than this card has, the latter would
+                link to app store listings that don't exist yet. */}
+            <div className="flex flex-col items-center bg-gradient-to-br from-[#0D6EFD] to-[#0047AB] px-4 py-6 text-center text-white">
               <img src="/logo.png" alt="MHU Global" className="h-14 w-14 rounded-full object-cover" />
-              <p className="mt-2 text-sm font-bold text-slate-900">
-                MHU <span className="text-accent">Global</span>
-              </p>
+              <p className="mt-2 text-xl font-bold">MHU</p>
+              <p className="text-[10px] font-bold tracking-wider">GLOBAL INVESTMENT LTD</p>
+              <p className="mt-0.5 text-[10px] italic text-white/85">Powering your digital lifestyle</p>
             </div>
 
-            <div className="my-4 border-t border-dashed border-slate-200" />
-
-            <div className="flex flex-col items-center text-center">
-              <div className={`flex h-12 w-12 items-center justify-center rounded-full ${status.className}`}>
-                <StatusIcon size={24} />
+            <div className="px-5 py-5">
+              <div className="flex flex-col items-center text-center">
+                <div className={`flex h-12 w-12 items-center justify-center rounded-full ${status.solid}`}>
+                  <StatusIcon size={24} className="text-white" />
+                </div>
+                <p className="mt-3 text-lg font-bold text-blue-900">{headline(tx)}</p>
+                <p className="mt-1 text-sm text-slate-500">{subheadline(tx)}</p>
               </div>
-              <p className={`mt-3 text-2xl font-bold ${credit ? "text-emerald-500" : "text-slate-900"}`}>
-                {credit ? "+" : "-"}
-                {formatCurrency(tx.amount)}
+
+              <div className="mt-5 rounded-lg bg-slate-50 p-3.5 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] text-slate-500">Transaction Reference</p>
+                    <p className="mt-0.5 font-mono text-xs font-semibold text-blue-900">{tx.reference || "—"}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[11px] text-slate-500">Date &amp; Time</p>
+                    <p className="mt-0.5 text-xs font-semibold text-slate-900">{formatDate(tx.created_at)}</p>
+                  </div>
+                </div>
+
+                <div className="my-3 border-t border-slate-200" />
+
+                <div className="space-y-2.5">
+                  <Row label="Transaction" value={tx.title || tx.type.replace(/_/g, " ")} />
+                  {tx.subtitle && tx.subtitle !== status.label && <Row label="Description" value={tx.subtitle} />}
+                  <Row
+                    label="Amount"
+                    value={`${credit ? "+" : "-"}${formatCurrency(tx.amount)}`}
+                    valueClassName={credit ? "text-emerald-600" : "text-slate-900"}
+                    bold
+                  />
+                  <Row label="Transaction Type" value={friendlyType(tx.type)} />
+                  <Row label="Status" value={status.label} valueClassName={status.className.split(" ")[0]} />
+                </div>
+              </div>
+
+              <p className="mt-5 text-center text-sm italic text-blue-900">
+                Thank you for choosing MHU! Together we grow.
               </p>
-              <p className="mt-1 text-sm font-medium text-slate-500">{status.label}</p>
+              <p className="mt-1 text-center text-[11px] text-slate-400">
+                www.mhuventures.com &nbsp;|&nbsp; info@mhuventures.com
+              </p>
             </div>
-
-            <div className="my-4 border-t border-dashed border-slate-200" />
-
-            <div className="space-y-2.5 text-sm">
-              <Row label="Transaction" value={tx.title || tx.type.replace(/_/g, " ")} />
-              {tx.subtitle && <Row label="Description" value={tx.subtitle} />}
-              <Row label="Reference" value={tx.reference} mono />
-              <Row label="Date & time" value={formatDate(tx.created_at)} />
-              <Row label="Status" value={status.label} />
-            </div>
-
-            <div className="my-4 border-t border-dashed border-slate-200" />
-
-            <p className="text-center text-[11px] text-slate-400">
-              Thank you for using MHU Global — Fast. Safe. Reliable.
-            </p>
           </div>
 
           {error && <p className="mt-3 text-center text-sm text-red-400">{error}</p>}
@@ -160,11 +209,27 @@ export function ReceiptModal({ tx, onClose }: { tx: Transaction; onClose: () => 
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Row({
+  label,
+  value,
+  mono,
+  bold,
+  valueClassName,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  bold?: boolean;
+  valueClassName?: string;
+}) {
   return (
     <div className="flex items-start justify-between gap-4">
       <span className="text-slate-500">{label}</span>
-      <span className={`text-right font-medium text-slate-900 ${mono ? "font-mono text-xs" : ""}`}>{value}</span>
+      <span
+        className={`text-right text-slate-900 ${bold ? "font-bold" : "font-medium"} ${mono ? "font-mono text-xs" : ""} ${valueClassName ?? ""}`}
+      >
+        {value}
+      </span>
     </div>
   );
 }

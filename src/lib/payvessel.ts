@@ -192,6 +192,24 @@ export async function resolveAccount(bankCode: string, accountNumber: string): P
   return (data as { accountName: string }).accountName;
 }
 
+// Polls payvessel-payout's "status" action, which calls Payvessel's real,
+// documented Transfer Status endpoint directly -- unlike the
+// "transfer.success"/"transfer.failed" webhook events (guessed from
+// generic docs), which have never actually been observed firing for a real
+// payout. This is what lets a bank_transfer_out stop showing "pending"
+// once the money has genuinely landed, without depending on that webhook
+// at all. Called for every pending bank_transfer_out whenever Transactions
+// loads (see Transactions.tsx) -- safe to call repeatedly, a already-
+// resolved transaction just short-circuits server-side.
+export async function checkTransferStatus(reference: string): Promise<"pending" | "successful" | "failed"> {
+  if (isDemoMode) return "successful";
+  const { data, error } = await supabase.functions.invoke("payvessel-payout", {
+    body: { action: "status", reference },
+  });
+  if (error) throw new Error(await extractFunctionErrorMessage(error));
+  return (data as { status: "pending" | "successful" | "failed" }).status;
+}
+
 export async function payoutToBank(input: BankPayoutInput): Promise<BankPayoutResult> {
   if (isDemoMode) {
     const { demoStore } = await import("./demoStore");

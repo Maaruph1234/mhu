@@ -14,12 +14,22 @@
 //     -> { data: { status: "pending"|"success"|"failed", session_id, ... } }
 //
 // A transfer response of "pending" does NOT mean the money has definitely
-// moved -- the final outcome arrives later via the "transfer.success" /
-// "transfer.failed" / "transfer.reversed" webhook events, which
-// payvessel-webhook/index.ts handles: it flips the transaction to
-// "successful", or to "failed" AND refunds the wallet. That's why the
-// wallet is debited up front here (optimistically) but a "pending"
-// transaction row is left in place for the webhook to resolve either way.
+// moved -- the wallet is debited up front here (optimistically) but a
+// "pending" transaction row is left in place until the real outcome is
+// known, resolved one of two ways:
+//   1. payvessel-webhook/index.ts's guessed "transfer.success"/
+//      "transfer.failed"/"transfer.reversed" event handling (best-effort --
+//      unlike reserved_account.credit, Payvessel has never actually been
+//      observed sending this webhook for a real payout in this project, so
+//      it may simply not fire the way their docs describe).
+//   2. THE RELIABLE PATH: the "status" action below, which polls
+//      Payvessel's own documented Transfer Status endpoint
+//      (docs.payvessel.com/api-reference/transfers/transfer-status) directly
+//      by reference/session_id rather than waiting on a webhook. The app
+//      calls this itself whenever a pending bank_transfer_out is viewed, so
+//      a transfer that already succeeded on Payvessel's side (money in the
+//      recipient's bank) stops showing "pending" without needing a webhook
+//      at all.
 //
 // CORS: called directly from the browser, same reasoning as
 // payvessel-create-account/index.ts and vtpass-purchase/index.ts.
@@ -124,6 +134,100 @@ Deno.serve(async (req) => {
       return json({ accountName: resolveJson.data.account_name });
     }
 
+    // --- check status of a pending payout (no debit -- read + reconcile) ---
+    // Real, documented endpoint (unlike the webhook event names, which
+    // were guessed and turned out wrong for reserved_account.credit --
+    // this one is called directly so it can't silently drift the same way).
+    if (body.action === "status") {
+      const reference = body.reference as string | undefined;
+      if (!reference) {
+        return json({ error: "reference is required" }, { status: 400 });
+      }
+
+      // Selecting payvessel_session_id would error outright if
+      // add_payout_session_id.sql hasn't been run (unknown column) -- fall
+      // back to selecting without it so the status check still works off
+      // reference alone rather than 500ing over a missing nice-to-have.
+      let txn:
+        | { id: string; status: string; amount: number; payvessel_session_id?: string | null }
+        | null = null;
+      const withSession = await service
+        .from("transactions")
+        .select("id, status, amount, payvessel_session_id")
+        .eq("user_id", user.id)
+        .eq("reference", reference)
+        .maybeSingle();
+      if (withSession.error) {
+        const fallback = await service
+          .from("transactions")
+          .select("id, status, amount")
+          .eq("user_id", user.id)
+          .eq("reference", reference)
+          .maybeSingle();
+        txn = fallback.data;
+      } else {
+        txn = withSession.data;
+      }
+
+      if (!txn) {
+        return json({ error: "Unknown transaction" }, { status: 404 });
+      }
+      if (txn.status !== "pending") {
+        // Already resolved (by this same check earlier, or by the webhook).
+        return json({ status: txn.status });
+      }
+
+      const { ok, json: statusJson } = await pvPost("/pms/api/external/request/wallet/transfer-status/", {
+        reference,
+        session_id: txn.payvessel_session_id ?? undefined,
+      });
+
+      // Logged every time, same reasoning as payvessel-webhook: Payvessel's
+      // docs have already been wrong once about a real payload shape
+      // (reserved_account.credit), so if transfer-status's real response
+      // doesn't match data.status the way documented, this is how to see
+      // the actual shape and fix the field path -- rather than this action
+      // silently reporting "pending" forever for a transfer that already
+      // resolved on Payvessel's side.
+      console.log("payvessel-payout status check:", reference, "ok:", ok, JSON.stringify(statusJson));
+
+      const pvStatus = (statusJson?.data?.status as string | undefined)?.toLowerCase();
+      if (!ok || !statusJson?.status || !pvStatus || pvStatus === "pending") {
+        // Still genuinely pending, or Payvessel couldn't be reached this
+        // time -- leave the transaction alone, try again later.
+        return json({ status: "pending" });
+      }
+
+      if (pvStatus === "success" || pvStatus === "successful") {
+        await service.from("transactions").update({ status: "successful" }).eq("id", txn.id);
+        return json({ status: "successful" });
+      }
+
+      // failed/reversed/anything else negative -- refund the wallet, same
+      // as the webhook's failure path. `.eq("status", "pending")` +
+      // `.select()` here means only whichever call actually flips the row
+      // gets a result back, so two near-simultaneous status checks can't
+      // double-refund.
+      const { data: updated } = await service
+        .from("transactions")
+        .update({ status: "failed" })
+        .eq("id", txn.id)
+        .eq("status", "pending")
+        .select("id")
+        .maybeSingle();
+
+      if (updated) {
+        const { data: userRow } = await service.from("users").select("wallet_balance").eq("id", user.id).single();
+        if (userRow) {
+          await service
+            .from("users")
+            .update({ wallet_balance: Number(userRow.wallet_balance ?? 0) + Number(txn.amount ?? 0) })
+            .eq("id", user.id);
+        }
+      }
+      return json({ status: "failed" });
+    }
+
     // --- payout (debit wallet, then call Payvessel) ---
     const { bankCode, accountNumber, accountName, narration } = body;
     const amount = Number(body.amount ?? 0);
@@ -157,19 +261,23 @@ Deno.serve(async (req) => {
       return json({ error: transferJson?.message ?? "Bank transfer could not be initiated" }, { status: 502 });
     }
 
-    // Debit now, optimistically -- the webhook (transfer.success/failed/
-    // reversed) resolves the final outcome and refunds automatically on
-    // failure.
+    // Debit now, optimistically -- resolved later either by the webhook
+    // (best-effort) or, reliably, by the "status" action above polling
+    // Payvessel's real Transfer Status endpoint.
     await service
       .from("users")
       .update({ wallet_balance: Number(userRow.wallet_balance ?? 0) - amount })
       .eq("id", user.id);
 
+    // session_id is stored so the "status" action can pass it alongside
+    // reference to Transfer Status, per Payvessel's docs.
+    const sessionId = transferJson.data?.session_id as string | undefined;
+
     // A `notify_on_transaction` trigger builds a notification body as
     // `subtitle || ' - ' || sign || amount` -- a null subtitle makes that
     // whole expression null, which violates notifications.body's NOT NULL
     // constraint and silently rolls back this entire insert. Always set one.
-    const { error: txnError } = await service.from("transactions").insert({
+    const baseTxn = {
       user_id: user.id,
       type: "bank_transfer_out",
       amount,
@@ -177,7 +285,26 @@ Deno.serve(async (req) => {
       reference,
       title: `Bank transfer to ${accountName || accountNumber}`,
       subtitle: `Account ${accountNumber}`,
-    });
+    };
+
+    // Tries with payvessel_session_id first; if add_payout_session_id.sql
+    // hasn't been run yet, Postgrest rejects the unknown column and would
+    // otherwise fail this ENTIRE insert (money already left the wallet at
+    // this point) -- falls back to inserting without it rather than losing
+    // the transaction record over a missing nice-to-have column.
+    let txnError: { message: string } | null = null;
+    if (sessionId) {
+      const res = await service.from("transactions").insert({ ...baseTxn, payvessel_session_id: sessionId });
+      txnError = res.error;
+      if (txnError) {
+        console.error("Insert with payvessel_session_id failed, retrying without it:", txnError);
+        const retry = await service.from("transactions").insert(baseTxn);
+        txnError = retry.error;
+      }
+    } else {
+      const res = await service.from("transactions").insert(baseTxn);
+      txnError = res.error;
+    }
     if (txnError) {
       console.error("Failed to insert transaction record:", txnError);
     }
