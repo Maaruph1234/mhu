@@ -74,6 +74,36 @@ const DSTV_HOT_OFFERS: { pattern: RegExp; image: string }[] = [
   { pattern: /^(?!.*(\+|extra|showmax|stream)).*\bcompact\s*plus\b/i, image: "/tv/hot-offers/dstv-compact-plus.png" },
 ];
 
+// Real GOtv promo images for the five paid bouquets (Smallie -- the
+// cheapest tier -- has no promo image, so it just falls back to the plain
+// price row like before). Variation names confirmed against VTpass's own
+// GOTV Subscription API docs, e.g. "GOtv Supa - monthly N11,400" / "GOtv
+// Supa Plus - monthly N15,700" -- same "Plus" disambiguation trick as
+// DStv's Compact/Compact Plus above, since "Supa" alone would otherwise
+// also match "Supa Plus".
+const GOTV_HOT_OFFERS: { pattern: RegExp; image: string }[] = [
+  { pattern: /^(?!.*plus).*\bsupa\b/i, image: "/tv/hot-offers/gotv-supa.png" },
+  { pattern: /.*\bsupa\s*plus\b/i, image: "/tv/hot-offers/gotv-supa-plus.png" },
+  { pattern: /\bjolli\b/i, image: "/tv/hot-offers/gotv-jolli.png" },
+  { pattern: /\bjinja\b/i, image: "/tv/hot-offers/gotv-jinja.png" },
+  { pattern: /\bmax\b/i, image: "/tv/hot-offers/gotv-max.png" },
+];
+
+// Real StarTimes promo images for three of its bouquets (Smart/Super have
+// no promo image yet, so they fall back to the plain price row). VTpass's
+// own variation names are just the bare package name ("Classic", "Nova",
+// "Basic" -- e.g. "Nova - 900 Naira - 1 Month", confirmed against
+// vtpass.com/documentation/startimes-subscription-api), with no "DTT"/"DTH"
+// prefix -- that split is StarTimes' own marketing label for which
+// receiver a bouquet needs, not part of the variation name VTpass returns.
+// Nova/Basic each also have a "-weekly" variant with the same bouquet name,
+// which intentionally still matches here too (same tier, shorter duration).
+const STARTIMES_HOT_OFFERS: { pattern: RegExp; image: string }[] = [
+  { pattern: /\bclassic\b/i, image: "/tv/hot-offers/startimes-classic.png" },
+  { pattern: /\bnova\b/i, image: "/tv/hot-offers/startimes-nova.png" },
+  { pattern: /\bbasic\b/i, image: "/tv/hot-offers/startimes-basic.png" },
+];
+
 const HIGHLIGHT_PATTERNS: Record<string, { label: DataPlanCategory; patterns: RegExp[] }> = {
   mtn: {
     label: "Best Offers",
@@ -90,6 +120,14 @@ const HIGHLIGHT_PATTERNS: Record<string, { label: DataPlanCategory; patterns: Re
     label: "Hot Offers",
     patterns: DSTV_HOT_OFFERS.map((o) => o.pattern),
   },
+  gotv: {
+    label: "Hot Offers",
+    patterns: GOTV_HOT_OFFERS.map((o) => o.pattern),
+  },
+  startimes: {
+    label: "Hot Offers",
+    patterns: STARTIMES_HOT_OFFERS.map((o) => o.pattern),
+  },
 };
 
 function highlightBucket(name: string, network: string): DataPlanCategory | null {
@@ -104,9 +142,19 @@ function highlightBucket(name: string, network: string): DataPlanCategory | null
 // matching image so Tv.tsx can render an image-banner card instead of a
 // plain price row whenever a Hot Offers plan has one.
 export function getHotOfferImage(name: string, network: string): string | null {
-  if (network !== "dstv") return null;
-  const hit = DSTV_HOT_OFFERS.find((o) => o.pattern.test(name));
-  return hit ? hit.image : null;
+  if (network === "dstv") {
+    const hit = DSTV_HOT_OFFERS.find((o) => o.pattern.test(name));
+    return hit ? hit.image : null;
+  }
+  if (network === "gotv") {
+    const hit = GOTV_HOT_OFFERS.find((o) => o.pattern.test(name));
+    return hit ? hit.image : null;
+  }
+  if (network === "startimes") {
+    const hit = STARTIMES_HOT_OFFERS.find((o) => o.pattern.test(name));
+    return hit ? hit.image : null;
+  }
+  return null;
 }
 
 // Checked in priority order below: a plan matching an earlier category is
