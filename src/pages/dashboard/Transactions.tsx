@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { FileText } from "lucide-react";
 import { Card } from "../../components/ui/Card";
 import { TransactionRow } from "../../components/ui/TransactionRow";
 import { ReceiptModal } from "../../components/ui/ReceiptModal";
+import { StatementModal } from "../../components/ui/StatementModal";
 import { useWallet } from "../../context/WalletContext";
 import { checkTransferStatus } from "../../lib/payvessel";
 import type { Transaction, TransactionStatus } from "../../types";
@@ -17,6 +19,7 @@ export default function Transactions() {
   const { transactions, loading, refresh } = useWallet();
   const [filter, setFilter] = useState<TransactionStatus | "all">("all");
   const [selected, setSelected] = useState<Transaction | null>(null);
+  const [showStatement, setShowStatement] = useState(false);
 
   // Bank transfers used to be resolved only by a webhook that (per
   // payvessel-payout/index.ts's updated header comment) has never actually
@@ -43,9 +46,18 @@ export default function Transactions() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Transactions</h1>
-        <p className="mt-1 text-sm text-slate-500">A full history of everything on your wallet.</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Transactions</h1>
+          <p className="mt-1 text-sm text-slate-500">A full history of everything on your wallet.</p>
+        </div>
+        <button
+          onClick={() => setShowStatement(true)}
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-300 hover:text-slate-900"
+        >
+          <FileText size={15} />
+          Statement
+        </button>
       </div>
 
       <div className="flex gap-2">
@@ -77,6 +89,7 @@ export default function Transactions() {
       </Card>
 
       {selected && <ReceiptModal tx={selected} onClose={() => setSelected(null)} />}
+      {showStatement && <StatementModal onClose={() => setShowStatement(false)} />}
     </div>
   );
 }
