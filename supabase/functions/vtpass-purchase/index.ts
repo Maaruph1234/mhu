@@ -354,7 +354,15 @@ Deno.serve(async (req) => {
       amount,
       status: success ? "successful" : "failed",
       reference: requestId,
-      title: `${service.replace(/-/g, " ")} purchase via VTpass`,
+      // Never mention the backend processor's name here -- it's an
+      // implementation detail, not something the customer should see in
+      // their own transaction history (matches every other edge function's
+      // titles: "Bank transfer to X", "Flight booking", etc., none of which
+      // leak "via Payvessel"/"via Xpresswallet").
+      title: (() => {
+        const label = service.replace(/-/g, " ");
+        return `${label.charAt(0).toUpperCase()}${label.slice(1)} purchase`;
+      })(),
       subtitle,
     });
     // The purchase itself already happened (or failed) at VTpass regardless

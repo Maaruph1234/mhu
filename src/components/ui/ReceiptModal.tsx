@@ -48,6 +48,13 @@ function friendlyType(type: string): string {
     .join(" ");
 }
 
+// Older rows may still have "... via VTpass"/"... via Provibill" baked into
+// the stored title (see vtpass-purchase/index.ts) -- strip it so historical
+// transactions don't leak the backend processor's name in the receipt.
+function cleanTitle(title?: string | null): string | undefined {
+  return title?.replace(/\s*via\s+(VTpass|Provibill)\s*/gi, "").trim();
+}
+
 export function ReceiptModal({ tx, onClose }: { tx: Transaction; onClose: () => void }) {
   const receiptRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState<"image" | "pdf" | null>(null);
@@ -161,7 +168,7 @@ export function ReceiptModal({ tx, onClose }: { tx: Transaction; onClose: () => 
                 <div className="my-3 border-t border-slate-200" />
 
                 <div className="space-y-2.5">
-                  <Row label="Transaction" value={tx.title || tx.type.replace(/_/g, " ")} />
+                  <Row label="Transaction" value={cleanTitle(tx.title) || tx.type.replace(/_/g, " ")} />
                   {tx.subtitle && tx.subtitle !== status.label && <Row label="Description" value={tx.subtitle} />}
                   <Row
                     label="Amount"

@@ -36,6 +36,12 @@ const isCredit = (type: Transaction["type"]) =>
   type === "transfer_in" || type === "fund_wallet" || type === "referral_bonus" ||
   type === "card_withdraw" || type === "card_terminate";
 
+// Older rows may still have "... via VTpass"/"... via Provibill" baked into
+// the stored title (see vtpass-purchase/index.ts) -- strip it so historical
+// transactions don't leak the backend processor's name in the UI.
+const cleanTitle = (title?: string | null) =>
+  title?.replace(/\s*via\s+(VTpass|Provibill)\s*/gi, "").trim();
+
 export function TransactionRow({ tx, onClick }: { tx: Transaction; onClick?: () => void }) {
   const Icon = iconMap[tx.type] ?? Wallet;
   const credit = isCredit(tx.type);
@@ -50,7 +56,7 @@ export function TransactionRow({ tx, onClick }: { tx: Transaction; onClick?: () 
           <Icon size={18} />
         </div>
         <div>
-          <p className="text-sm font-medium text-slate-900">{tx.title || tx.type.replace("_", " ")}</p>
+          <p className="text-sm font-medium text-slate-900">{cleanTitle(tx.title) || tx.type.replace("_", " ")}</p>
           <p className="text-xs text-slate-500">
             {tx.subtitle ? `${tx.subtitle} · ` : ""}
             {formatDate(tx.created_at)}

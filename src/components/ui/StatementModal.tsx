@@ -39,6 +39,13 @@ function friendlyType(type: string): string {
     .join(" ");
 }
 
+// Older rows may still have "... via VTpass"/"... via Provibill" baked into
+// the stored title (see vtpass-purchase/index.ts) -- strip it so historical
+// transactions don't leak the backend processor's name in the statement.
+function cleanTitle(title?: string | null): string | undefined {
+  return title?.replace(/\s*via\s+(VTpass|Provibill)\s*/gi, "").trim();
+}
+
 interface StatementRow extends Transaction {
   runningBalance: number;
 }
@@ -263,7 +270,7 @@ export function StatementModal({ onClose }: { onClose: () => void }) {
                             <tr key={r.id} className="border-t border-slate-100">
                               <td className="px-2.5 py-2 text-slate-500">{formatDate(r.created_at)}</td>
                               <td className="px-2.5 py-2 text-slate-900">
-                                {r.title || friendlyType(r.type)}
+                                {cleanTitle(r.title) || friendlyType(r.type)}
                                 {r.subtitle ? <span className="text-slate-400"> · {r.subtitle}</span> : null}
                               </td>
                               <td className={`px-2.5 py-2 text-right font-medium ${credit ? "text-emerald-600" : "text-slate-900"}`}>

@@ -356,7 +356,7 @@ Deno.serve(async (req) => {
       amount,
       status: success ? "successful" : "failed",
       reference: channelRef,
-      title: `${service} purchase via Provibill`,
+      title: `${service.charAt(0).toUpperCase()}${service.slice(1)} purchase`,
     });
 
     return new Response(
