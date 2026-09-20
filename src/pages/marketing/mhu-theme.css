@@ -1,0 +1,74 @@
+/*
+ * Shared "video-background" theme used outside the hero itself: the rest of
+ * the homepage (Landing.tsx sections) and the auth pages (AuthLayout).
+ *
+ * Deliberately independent of hero.css's --u reference-pixel scaling
+ * system -- these are plainer, non-choreographed layouts (no entrance
+ * animation), so ordinary rem/px values are used instead. Class names are
+ * prefixed mhu- to stay out of Tailwind's / the rest of the app's way.
+ */
+
+.mhu-video-backdrop{
+  position:absolute;inset:0;overflow:hidden;background:#03060d;z-index:0;
+}
+.mhu-video-backdrop video{
+  position:absolute;inset:0;width:100%;height:100%;
+  object-fit:cover;object-position:51% 30%;
+  opacity:0;transition:opacity .9s linear;pointer-events:none;
+  background-color:#03060d;
+}
+.mhu-video-backdrop video.is-active{ opacity:1; }
+.mhu-video-backdrop .mhu-video-overlay{
+  position:absolute;inset:0;
+  background:linear-gradient(180deg, rgba(3,6,13,.70) 0%, rgba(3,6,13,.84) 100%);
+}
+
+/* Simple nav bar for video-background pages that aren't the full
+   choreographed hero (currently: the auth pages). */
+.mhu-video-nav{
+  position:relative;z-index:2;display:flex;align-items:center;
+  justify-content:space-between;gap:.75rem;
+  padding:1.25rem clamp(1rem, 4vw, 3.2rem);
+}
+.mhu-video-nav .mhu-logo-link{ display:flex;align-items:center; }
+.mhu-video-nav .mhu-logo-link img{
+  width:3rem;height:3rem;border-radius:50%;object-fit:cover;display:block;
+  filter:brightness(1.2) drop-shadow(0 0 16px rgba(255,255,255,.4));
+}
+@media (min-width:640px){
+  .mhu-video-nav .mhu-logo-link img{ width:3.75rem;height:3.75rem; }
+}
+
+.mhu-nav-pill{
+  display:flex;align-items:center;gap:.375rem;
+  background:#0b1120;border-radius:999px;padding:.375rem;
+}
+.mhu-nav-pill .pill-login{
+  display:inline-flex;align-items:center;height:2.25rem;padding:0 1rem;
+  border-radius:999px;color:#cbd5e1;font-size:.8125rem;font-weight:500;
+  text-decoration:none;transition:color .18s ease;white-space:nowrap;
+}
+.mhu-nav-pill .pill-login:hover{ color:#fff; }
+.mhu-nav-pill .pill-start{
+  display:inline-flex;align-items:center;gap:.4rem;height:2.25rem;
+  padding:0 1rem;border-radius:999px;background:#3D5AFE;color:#fff;
+  font-size:.75rem;font-weight:700;letter-spacing:.02em;text-transform:uppercase;
+  text-decoration:none;transition:background .18s ease;white-space:nowrap;
+}
+.mhu-nav-pill .pill-start:hover{ background:#2F46D1; }
+.mhu-nav-pill .pill-start .dot{
+  width:.375rem;height:.375rem;border-radius:50%;background:#fff;
+  display:inline-block;flex:0 0 auto;
+}
+
+/* Glass card used for dark, video-backed sections/panels throughout the
+   rest of the homepage and the auth pages. */
+.mhu-glass-card{
+  background:rgba(255,255,255,.055);
+  border:1px solid rgba(255,255,255,.10);
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+}
+.mhu-glass-soft{
+  background:rgba(255,255,255,.035);
+  border:1px solid rgba(255,255,255,.08);
+}

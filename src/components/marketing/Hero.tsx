@@ -212,8 +212,7 @@ export function Hero() {
 
       <header className="nav">
         <Link to="/" className="logo">
-          <img src="/logo.png" alt="" />
-          MHU
+          <img src="/logo.png" alt="MHU Global" />
         </Link>
 
         <nav className="nav-links" aria-label="Primary">
@@ -225,13 +224,15 @@ export function Hero() {
         </nav>
 
         <div className="nav-actions">
-          <Link to="/login" className="btn btn-login">
-            Login
-          </Link>
-          <Link to="/register" className="btn btn-nav-start">
-            Get Started
-            <Arrow />
-          </Link>
+          <div className="nav-pill">
+            <Link to="/login" className="pill-login">
+              Log in
+            </Link>
+            <Link to="/register" className="pill-start">
+              <span className="dot" />
+              Get started
+            </Link>
+          </div>
         </div>
 
         <button
@@ -263,11 +264,11 @@ export function Hero() {
         ))}
         <div className="divider" />
         <Link to="/login" onClick={() => setMenuOpen(false)}>
-          Login
+          Log in
         </Link>
         <Link to="/register" className="m-start" onClick={() => setMenuOpen(false)}>
-          Get Started
-          <Arrow />
+          <span className="dot" />
+          Get started
         </Link>
       </nav>
 

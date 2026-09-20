@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { MarketingFooter } from "../../components/layout/MarketingFooter";
 import { Hero } from "../../components/marketing/Hero";
+import { VideoBackdrop } from "../../components/marketing/VideoBackdrop";
+import "./mhu-theme.css";
 
 const services = [
   { icon: Smartphone, title: "Airtime top-up", desc: "Instant recharge across MTN, Airtel, Glo and 9mobile." },
@@ -52,121 +54,133 @@ const faqs = [
 function FaqItem({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="card-surface overflow-hidden">
+    <div className="mhu-glass-card overflow-hidden rounded-2xl">
       <button
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between px-6 py-5 text-left"
       >
-        <span className="font-medium text-slate-900">{q}</span>
-        <ChevronDown className={`h-5 w-5 shrink-0 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} />
+        <span className="font-medium text-white">{q}</span>
+        <ChevronDown className={`h-5 w-5 shrink-0 text-slate-300 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
-      {open && <div className="px-6 pb-5 text-sm leading-relaxed text-slate-500">{a}</div>}
+      {open && <div className="px-6 pb-5 text-sm leading-relaxed text-slate-300">{a}</div>}
     </div>
   );
 }
 
 export default function Landing() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-[#03060d]">
       <Hero />
 
       {/* Services */}
-      <section id="services" className="container-xl py-20">
-        <div className="mb-14 text-center">
-          <p className="text-xs font-semibold uppercase tracking-widest text-accent">Services</p>
-          <h2 className="mt-3 text-3xl font-bold text-slate-900 lg:text-4xl">Everything you pay for, in one place</h2>
-        </div>
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {services.map((s, i) => (
-            <div key={s.title} className="group card-surface p-6 transition hover:border-accent/30">
-              <div
-                className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-accent/10 text-accent transition-transform duration-300 will-change-transform animate-float group-hover:scale-110 group-hover:rotate-6"
-                style={{ animationDelay: `${i * 0.15}s` }}
-              >
-                <s.icon size={22} />
+      <section id="services" className="relative overflow-hidden py-20">
+        <VideoBackdrop />
+        <div className="container-xl relative z-10">
+          <div className="mb-14 text-center">
+            <p className="text-xs font-semibold uppercase tracking-widest text-accent-400">Services</p>
+            <h2 className="mt-3 text-3xl font-bold text-white lg:text-4xl">Everything you pay for, in one place</h2>
+          </div>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {services.map((s, i) => (
+              <div key={s.title} className="group mhu-glass-card rounded-2xl p-6 transition hover:border-accent-400/40">
+                <div
+                  className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-accent/20 text-accent-400 transition-transform duration-300 will-change-transform animate-float group-hover:scale-110 group-hover:rotate-6"
+                  style={{ animationDelay: `${i * 0.15}s` }}
+                >
+                  <s.icon size={22} />
+                </div>
+                <h3 className="mb-1.5 font-semibold text-white">{s.title}</h3>
+                <p className="text-sm leading-relaxed text-slate-300">{s.desc}</p>
               </div>
-              <h3 className="mb-1.5 font-semibold text-slate-900">{s.title}</h3>
-              <p className="text-sm leading-relaxed text-slate-500">{s.desc}</p>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </section>
 
       {/* Trust strip */}
-      <section id="security" className="bg-white py-6">
-        <div className="container-xl">
-          <div className="grid gap-8 rounded-3xl border border-accent-100 bg-accent-50/50 px-6 py-12 sm:grid-cols-3 sm:px-10">
-          <div className="flex items-start gap-4">
-            <ShieldCheck className="mt-1 h-6 w-6 shrink-0 animate-float text-accent will-change-transform" />
-            <div>
-              <h4 className="font-semibold text-slate-900">Secure by design</h4>
-              <p className="mt-1 text-sm text-slate-500">SMS verification on every login and every device.</p>
+      <section id="security" className="relative overflow-hidden py-6">
+        <VideoBackdrop />
+        <div className="container-xl relative z-10">
+          <div className="mhu-glass-card grid gap-8 rounded-3xl px-6 py-12 sm:grid-cols-3 sm:px-10">
+            <div className="flex items-start gap-4">
+              <ShieldCheck className="mt-1 h-6 w-6 shrink-0 animate-float text-accent-400 will-change-transform" />
+              <div>
+                <h4 className="font-semibold text-white">Secure by design</h4>
+                <p className="mt-1 text-sm text-slate-300">SMS verification on every login and every device.</p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <Gauge
-              className="mt-1 h-6 w-6 shrink-0 animate-float text-accent will-change-transform"
-              style={{ animationDelay: "0.3s" }}
-            />
-            <div>
-              <h4 className="font-semibold text-slate-900">Instant settlement</h4>
-              <p className="mt-1 text-sm text-slate-500">Purchases and transfers confirm in real time.</p>
+            <div className="flex items-start gap-4">
+              <Gauge
+                className="mt-1 h-6 w-6 shrink-0 animate-float text-accent-400 will-change-transform"
+                style={{ animationDelay: "0.3s" }}
+              />
+              <div>
+                <h4 className="font-semibold text-white">Instant settlement</h4>
+                <p className="mt-1 text-sm text-slate-300">Purchases and transfers confirm in real time.</p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <Users
-              className="mt-1 h-6 w-6 shrink-0 animate-float text-accent will-change-transform"
-              style={{ animationDelay: "0.6s" }}
-            />
-            <div>
-              <h4 className="font-semibold text-slate-900">Built for everyone</h4>
-              <p className="mt-1 text-sm text-slate-500">Simple enough for anyone, powerful enough for daily use.</p>
+            <div className="flex items-start gap-4">
+              <Users
+                className="mt-1 h-6 w-6 shrink-0 animate-float text-accent-400 will-change-transform"
+                style={{ animationDelay: "0.6s" }}
+              />
+              <div>
+                <h4 className="font-semibold text-white">Built for everyone</h4>
+                <p className="mt-1 text-sm text-slate-300">Simple enough for anyone, powerful enough for daily use.</p>
+              </div>
             </div>
-          </div>
           </div>
         </div>
       </section>
 
       {/* How it works */}
-      <section id="how-it-works" className="container-xl py-24">
-        <div className="mb-14 text-center">
-          <p className="text-xs font-semibold uppercase tracking-widest text-accent">How it works</p>
-          <h2 className="mt-3 text-3xl font-bold text-slate-900 lg:text-4xl">Get started in minutes</h2>
-        </div>
-        <div className="grid gap-8 md:grid-cols-3">
-          {steps.map((s) => (
-            <div key={s.n} className="relative pl-4">
-              <div className="mb-4 text-5xl font-extrabold text-slate-900/10">{s.n}</div>
-              <h3 className="mb-2 font-semibold text-slate-900">{s.title}</h3>
-              <p className="text-sm leading-relaxed text-slate-500">{s.desc}</p>
-            </div>
-          ))}
+      <section id="how-it-works" className="relative overflow-hidden py-24">
+        <VideoBackdrop />
+        <div className="container-xl relative z-10">
+          <div className="mb-14 text-center">
+            <p className="text-xs font-semibold uppercase tracking-widest text-accent-400">How it works</p>
+            <h2 className="mt-3 text-3xl font-bold text-white lg:text-4xl">Get started in minutes</h2>
+          </div>
+          <div className="grid gap-8 md:grid-cols-3">
+            {steps.map((s) => (
+              <div key={s.n} className="relative pl-4">
+                <div className="mb-4 text-5xl font-extrabold text-white/10">{s.n}</div>
+                <h3 className="mb-2 font-semibold text-white">{s.title}</h3>
+                <p className="text-sm leading-relaxed text-slate-300">{s.desc}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
       {/* FAQ */}
-      <section id="faq" className="container-xl py-20">
-        <div className="mb-10 text-center">
-          <p className="text-xs font-semibold uppercase tracking-widest text-accent">FAQ</p>
-          <h2 className="mt-3 text-3xl font-bold text-slate-900 lg:text-4xl">Common questions</h2>
-        </div>
-        <div className="mx-auto max-w-2xl space-y-3">
-          {faqs.map((f) => (
-            <FaqItem key={f.q} {...f} />
-          ))}
+      <section id="faq" className="relative overflow-hidden py-20">
+        <VideoBackdrop />
+        <div className="container-xl relative z-10">
+          <div className="mb-10 text-center">
+            <p className="text-xs font-semibold uppercase tracking-widest text-accent-400">FAQ</p>
+            <h2 className="mt-3 text-3xl font-bold text-white lg:text-4xl">Common questions</h2>
+          </div>
+          <div className="mx-auto max-w-2xl space-y-3">
+            {faqs.map((f) => (
+              <FaqItem key={f.q} {...f} />
+            ))}
+          </div>
         </div>
       </section>
 
       {/* CTA */}
-      <section className="container-xl pb-24">
-        <div className="relative flex flex-col items-center gap-6 overflow-hidden rounded-2xl bg-gradient-to-br from-accent to-accent-700 px-8 py-14 text-center shadow-glow">
-          <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-          <h2 className="max-w-lg text-3xl font-bold text-white">Ready to move money at internet speed?</h2>
-          <Link to="/register">
-            <button className="press-glass inline-flex items-center justify-center rounded-full bg-white px-7 py-3.5 text-base font-semibold text-accent transition hover:bg-white/90">
-              Create your free account
-            </button>
-          </Link>
+      <section className="relative overflow-hidden py-24">
+        <VideoBackdrop />
+        <div className="container-xl relative z-10">
+          <div className="relative flex flex-col items-center gap-6 overflow-hidden rounded-2xl mhu-glass-card px-8 py-14 text-center">
+            <h2 className="max-w-lg text-3xl font-bold text-white">Ready to move money at internet speed?</h2>
+            <Link to="/register">
+              <button className="press-glass inline-flex items-center justify-center rounded-full bg-white px-7 py-3.5 text-base font-semibold text-accent transition hover:bg-white/90">
+                Create your free account
+              </button>
+            </Link>
+          </div>
         </div>
       </section>
 

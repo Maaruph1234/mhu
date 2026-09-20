@@ -82,13 +82,13 @@
 
 .mhu-hero .logo{
   display:flex;align-items:center;gap:calc(7 * var(--u));
-  font-weight:800;font-size:calc(22 * var(--u));letter-spacing:calc(0.45 * var(--u));
-  transform:translateY(calc(-2.4 * var(--u)));line-height:1;color:var(--ink);
+  line-height:1;color:var(--ink);
   text-decoration:none;white-space:nowrap;
 }
 .mhu-hero .logo img{
-  width:calc(30 * var(--u));height:calc(30 * var(--u));
+  width:calc(46 * var(--u));height:calc(46 * var(--u));
   border-radius:50%;object-fit:cover;display:block;
+  filter:brightness(1.2) drop-shadow(0 0 16px rgba(255,255,255,.4));
 }
 
 .mhu-hero .nav-links{
@@ -110,23 +110,32 @@
   font-family:inherit;text-decoration:none;white-space:nowrap;border:0;cursor:pointer;
 }
 
-.mhu-hero .btn-login{
-  height:calc(28 * var(--u));padding:0 calc(12.9 * var(--u));
-  border-radius:calc(14 * var(--u));background:var(--panel);color:#e8e8e8;
-  font-size:calc(11.5 * var(--u));font-weight:500;letter-spacing:calc(-0.15 * var(--u));
-  transition:background .18s ease,color .18s ease;
+/* Nav login/get-started buttons: matches the site's earlier pill-in-pill
+   navbar (dark rounded container, ghost login + solid accent-blue CTA with
+   a dot) instead of the design spec's separate white/dark pills. */
+.mhu-hero .nav-pill{
+  display:flex;align-items:center;gap:calc(3 * var(--u));
+  background:var(--panel);border-radius:999px;padding:calc(4 * var(--u));
 }
-.mhu-hero .btn-login:hover{ background:#232323;color:#fff; }
-
-.mhu-hero .btn-nav-start{
-  height:calc(28 * var(--u));padding-left:calc(13.5 * var(--u));
-  padding-right:calc(14.5 * var(--u));border-radius:calc(14 * var(--u));
-  background:var(--white-btn);color:var(--btn-ink);font-size:calc(11.1 * var(--u));
-  font-weight:500;letter-spacing:0;gap:calc(7 * var(--u));
+.mhu-hero .pill-login{
+  height:calc(28 * var(--u));display:inline-flex;align-items:center;
+  padding:0 calc(14 * var(--u));border-radius:999px;color:#cbd5e1;
+  font-size:calc(11.5 * var(--u));font-weight:500;letter-spacing:calc(-0.15 * var(--u));
+  text-decoration:none;transition:color .18s ease;
+}
+.mhu-hero .pill-login:hover{ color:#fff; }
+.mhu-hero .pill-start{
+  display:inline-flex;align-items:center;gap:calc(6 * var(--u));
+  height:calc(28 * var(--u));padding:0 calc(14 * var(--u));border-radius:999px;
+  background:#3D5AFE;color:#fff;font-size:calc(10.3 * var(--u));font-weight:700;
+  letter-spacing:.02em;text-transform:uppercase;text-decoration:none;
   transition:background .18s ease;
 }
-.mhu-hero .btn-nav-start:hover{ background:#fff; }
-.mhu-hero .btn-nav-start .arw{ width:calc(11.5 * var(--u));height:calc(9.6 * var(--u)); }
+.mhu-hero .pill-start:hover{ background:#2F46D1; }
+.mhu-hero .pill-start .dot{
+  width:calc(4.5 * var(--u));height:calc(4.5 * var(--u));border-radius:50%;
+  background:#fff;display:inline-block;flex:0 0 auto;
+}
 
 .mhu-hero .burger{
   display:none;margin-left:auto;width:calc(40 * var(--u));
@@ -268,20 +277,22 @@
   .mhu-hero .menu a:hover{ background:rgba(255,255,255,.06);color:#fff; }
   .mhu-hero .menu .divider{ height:1px;background:rgba(255,255,255,.08);margin:8px 14px; }
   .mhu-hero .menu .m-start{
-    display:flex;align-items:center;justify-content:center;gap:9px;
-    background:var(--white-btn);color:var(--btn-ink);margin:6px 8px 0;padding:13px 16px;
-    border-radius:14px;font-weight:600;
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    background:#3D5AFE;color:#fff;margin:6px 8px 0;padding:13px 16px;
+    border-radius:14px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.02em;font-size:13px;
   }
-  .mhu-hero .menu .m-start:hover{ background:#fff;color:var(--btn-ink); }
-  .mhu-hero .menu .m-start .arw{ width:13px;height:11px; }
+  .mhu-hero .menu .m-start:hover{ background:#2F46D1; }
+  .mhu-hero .menu .m-start .dot{
+    width:6px;height:6px;border-radius:50%;background:#fff;flex:0 0 auto;
+  }
 }
 
 /* --- MOBILE: max-width 552px --- */
 @media (max-width:552px){
   .mhu-hero{ --u: 1px; }
   .mhu-hero .nav{ height:56px;padding:0 20px; }
-  .mhu-hero .logo{ font-size:20px;letter-spacing:-.4px; }
-  .mhu-hero .logo img{ width:26px;height:26px; }
+  .mhu-hero .logo img{ width:40px;height:40px; }
   .mhu-hero .burger{ width:42px;height:36px; }
   .mhu-hero .hero-inner{
     position:absolute;left:0;right:0;top:50%;width:auto;max-width:none;
@@ -328,7 +339,7 @@
 .mhu-hero.anim .ln-i{ transform:translateY(100%);will-change:transform,opacity; }
 .mhu-hero.anim .logo,
 .mhu-hero.anim .nav-links a,
-.mhu-hero.anim .nav-actions .btn,
+.mhu-hero.anim .nav-actions .nav-pill,
 .mhu-hero.anim .burger,
 .mhu-hero.anim .sub,
 .mhu-hero.anim .ctas .btn{
@@ -371,9 +382,8 @@
 .mhu-hero.anim.go .nav-links a:nth-child(4){ animation-delay:.675s; }
 .mhu-hero.anim.go .nav-links a:nth-child(5){ animation-delay:.720s; }
 .mhu-hero.anim.go .sub{ animation:mhuHeroSubIn .85s var(--e-reveal) .58s both; }
-.mhu-hero.anim.go .btn-login{ animation:mhuHeroPillIn .55s var(--e-soft) .68s both; }
+.mhu-hero.anim.go .nav-pill{ animation:mhuHeroPillIn .55s var(--e-soft) .68s both; }
 .mhu-hero.anim.go .burger{ animation:mhuHeroPillIn .55s var(--e-soft) .68s both; }
-.mhu-hero.anim.go .btn-nav-start{ animation:mhuHeroPillIn .55s var(--e-soft) .73s both; }
 .mhu-hero.anim.go .ctas .btn-primary{ animation:mhuHeroPillIn .70s var(--e-reveal) .90s both; }
 .mhu-hero.anim.go .ctas .btn-ghost{ animation:mhuHeroPillIn .70s var(--e-reveal) .97s both; }
 
