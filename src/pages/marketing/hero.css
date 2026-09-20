@@ -1,0 +1,399 @@
+/*
+ * MHU Global hero section — video-background hero with a reference-pixel
+ * scaling system, ported from a self-contained index.html design spec.
+ *
+ * Every selector is scoped under .mhu-hero so this can embed safely inside
+ * the existing React/Tailwind app (Landing.tsx) without leaking styles onto
+ * the rest of the page or fighting Tailwind's own resets. The original spec
+ * assumed this WAS the entire page (html/body overflow:hidden, 100vw/100dvh
+ * everywhere) -- here .mhu-hero itself plays that role instead, sized to
+ * 100dvh and clipping its own contents, while the rest of Landing.tsx scrolls
+ * normally below it. All keyframe names are prefixed (mhuHero...) so they
+ * can't collide with any other animation in the app.
+ */
+
+.mhu-hero{
+  --u: min(calc(100vw / 1280), calc(100dvh / 760));
+
+  --ink:        #ffffff;
+  --ink-muted:  #ededed;
+  --panel:      #181818;
+  --white-btn:  #fdfdfd;
+  --btn-ink:    #050505;
+  --glass-fill: rgba(0,0,0,.78);
+  --glass-line: rgba(255,255,255,.09);
+
+  --dx: 8.5;    /* hero block optical offset, solved against the reference render */
+  --dy: 13.1;
+
+  --e-reveal: cubic-bezier(.16, 1, .3, 1);   /* long, graceful settle */
+  --e-soft:   cubic-bezier(.25, .8, .3, 1);  /* supporting elements   */
+
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  background: #000;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+  color: var(--ink);
+}
+@supports not (height: 100dvh){
+  .mhu-hero{ height: 100vh; }
+  .mhu-hero{ --u: min(calc(100vw / 1280), calc(100vh / 760)); }
+}
+
+.mhu-hero *{ box-sizing: border-box; }
+
+/* ===================== VIDEO BACKGROUND ===================== */
+
+.mhu-hero .bg{
+  position:absolute;left:50%;top:50%;
+  transform:translate(-50%,-50%);
+  width:max(100vw, calc(100dvh * 1.6));
+  height:max(62.5vw, 100dvh);
+  background-color:#000;
+}
+@supports not (height: 100dvh){
+  .mhu-hero .bg{ width:max(100vw, calc(100vh * 1.6)); height:max(62.5vw, 100vh); }
+}
+.mhu-hero .bg-video{
+  position:absolute;inset:0;
+  width:100%;height:100%;
+  object-fit:cover;
+  object-position:51% 8%;
+  display:block;
+  background-color:#000;
+  pointer-events:none;
+  opacity:0;
+  transition:opacity .9s linear;
+}
+.mhu-hero .bg-video.is-active{ opacity:1; }
+
+/* ===================== NAV (desktop) ===================== */
+
+.mhu-hero .nav{
+  position:absolute;top:0;left:0;right:0;height:calc(67 * var(--u));
+  display:flex;align-items:center;
+  padding-left:calc(24.5 * var(--u));padding-right:calc(50.7 * var(--u));z-index:3;
+}
+
+.mhu-hero .logo{
+  display:flex;align-items:center;gap:calc(7 * var(--u));
+  font-weight:800;font-size:calc(22 * var(--u));letter-spacing:calc(0.45 * var(--u));
+  transform:translateY(calc(-2.4 * var(--u)));line-height:1;color:var(--ink);
+  text-decoration:none;white-space:nowrap;
+}
+.mhu-hero .logo img{
+  width:calc(30 * var(--u));height:calc(30 * var(--u));
+  border-radius:50%;object-fit:cover;display:block;
+}
+
+.mhu-hero .nav-links{
+  position:absolute;left:50%;top:50%;
+  transform:translate(-50%,-50%) translateX(calc(-23 * var(--u)));
+  display:flex;align-items:center;gap:calc(24.3 * var(--u));white-space:nowrap;
+}
+.mhu-hero .nav-links a{
+  color:var(--ink-muted);text-decoration:none;font-size:calc(11.5 * var(--u));
+  font-weight:500;letter-spacing:calc(-0.15 * var(--u));line-height:1;
+  transition:color .18s ease;
+}
+.mhu-hero .nav-links a:hover{ color:#fff; }
+
+.mhu-hero .nav-actions{ margin-left:auto;display:flex;align-items:center;gap:calc(6.8 * var(--u)); }
+
+.mhu-hero .btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  font-family:inherit;text-decoration:none;white-space:nowrap;border:0;cursor:pointer;
+}
+
+.mhu-hero .btn-login{
+  height:calc(28 * var(--u));padding:0 calc(12.9 * var(--u));
+  border-radius:calc(14 * var(--u));background:var(--panel);color:#e8e8e8;
+  font-size:calc(11.5 * var(--u));font-weight:500;letter-spacing:calc(-0.15 * var(--u));
+  transition:background .18s ease,color .18s ease;
+}
+.mhu-hero .btn-login:hover{ background:#232323;color:#fff; }
+
+.mhu-hero .btn-nav-start{
+  height:calc(28 * var(--u));padding-left:calc(13.5 * var(--u));
+  padding-right:calc(14.5 * var(--u));border-radius:calc(14 * var(--u));
+  background:var(--white-btn);color:var(--btn-ink);font-size:calc(11.1 * var(--u));
+  font-weight:500;letter-spacing:0;gap:calc(7 * var(--u));
+  transition:background .18s ease;
+}
+.mhu-hero .btn-nav-start:hover{ background:#fff; }
+.mhu-hero .btn-nav-start .arw{ width:calc(11.5 * var(--u));height:calc(9.6 * var(--u)); }
+
+.mhu-hero .burger{
+  display:none;margin-left:auto;width:calc(40 * var(--u));
+  height:calc(28 * var(--u));align-items:center;justify-content:center;
+  background:var(--panel);border-radius:calc(14 * var(--u));border:0;cursor:pointer;padding:0;
+}
+.mhu-hero .burger span{ display:block;width:16px;height:1.5px;background:#ededed;border-radius:2px;position:relative; }
+.mhu-hero .burger span::before,
+.mhu-hero .burger span::after{
+  content:"";position:absolute;left:0;width:16px;height:1.5px;
+  background:#ededed;border-radius:2px;
+}
+.mhu-hero .burger span::before{ top:-5px; }
+.mhu-hero .burger span::after{ top:5px; }
+
+.mhu-hero .arw{ flex:0 0 auto;display:block; }
+
+/* ===================== HERO CONTENT ===================== */
+
+.mhu-hero .hero-inner{
+  position:absolute;left:50%;top:50%;
+  transform:translate(-50%,-50%) translate(calc(var(--dx) * var(--u)), calc(var(--dy) * var(--u)));
+  width:max-content;text-align:center;z-index:2;
+}
+
+.mhu-hero h1{
+  margin:0;font-weight:500;font-size:calc(89 * var(--u));
+  line-height:calc(90 * var(--u));letter-spacing:calc(-1 * var(--u));color:var(--ink);
+}
+.mhu-hero .ln{ display:block; }
+.mhu-hero .ln-i{ display:block; }
+
+.mhu-hero .sub{
+  margin:calc(16.1 * var(--u)) 0 0;font-weight:300;font-size:calc(17.4 * var(--u));
+  line-height:calc(27 * var(--u));letter-spacing:calc(-0.30 * var(--u));color:#f6f6f6;
+}
+
+.mhu-hero .ctas{
+  margin-top:calc(21.8 * var(--u));display:flex;align-items:center;
+  justify-content:center;transform:translateX(calc(-0.75 * var(--u)));
+  gap:calc(7 * var(--u));
+}
+
+.mhu-hero .btn-lg{
+  height:calc(39 * var(--u));border-radius:calc(19.5 * var(--u));
+  font-size:calc(13.3 * var(--u));font-weight:500;
+  letter-spacing:calc(-0.3 * var(--u));gap:calc(9 * var(--u));
+}
+.mhu-hero .btn-primary{
+  background:var(--white-btn);color:var(--btn-ink);
+  padding-left:calc(18.2 * var(--u));padding-right:calc(19.2 * var(--u));
+  transition:background .18s ease,transform .18s ease;
+}
+.mhu-hero .btn-primary:hover{ background:#fff; }
+.mhu-hero .btn-ghost{
+  background:var(--glass-fill);color:#d9d9d9;padding:0 calc(17.4 * var(--u));
+  border:1px solid var(--glass-line);-webkit-backdrop-filter:blur(2px);
+  backdrop-filter:blur(2px);transition:background .18s ease,border-color .18s ease;
+}
+.mhu-hero .btn-ghost:hover{ background:rgba(0,0,0,.66);border-color:rgba(255,255,255,.16); }
+.mhu-hero .btn-lg .arw{ width:calc(13 * var(--u));height:calc(10.8 * var(--u)); }
+
+.mhu-hero a:focus-visible,
+.mhu-hero button:focus-visible{
+  outline:2px solid #a78bfa;outline-offset:3px;border-radius:99px;
+}
+
+/* ===================== MOBILE MENU ===================== */
+
+.mhu-hero .menu{ display:none; }
+@keyframes mhuHeroMenuIn{
+  from{ opacity:0;transform:translateY(-6px) scale(.985); }
+  to{ opacity:1;transform:none; }
+}
+
+/* ===================== BREAKPOINTS ===================== */
+
+/* --- TABLET: max-width 1160px --- */
+@media (max-width:1160px){
+  .mhu-hero{
+    --u: min(
+      max(0.9px, min(calc(100vw / 1280), calc(100dvh / 760))),
+      calc((100vw - 72px) / 575),
+      calc(100dvh / 620)
+    );
+  }
+  .mhu-hero .nav{
+    height:max(58px, calc(67 * var(--u)));
+    padding-left:max(24px, calc(28 * var(--u)));
+    padding-right:max(24px, calc(28 * var(--u)));
+  }
+  .mhu-hero .nav-links,
+  .mhu-hero .nav-actions{ display:none; }
+  .mhu-hero .burger{
+    display:flex;width:max(46px, calc(48 * var(--u)));
+    height:max(38px, calc(34 * var(--u)));border-radius:999px;
+  }
+  .mhu-hero .hero-inner{ max-width:calc(100vw - 48px); }
+  .mhu-hero .sub{
+    font-size:max(16px, calc(17.4 * var(--u)));
+    line-height:max(25px, calc(27 * var(--u)));
+  }
+  .mhu-hero .ctas{
+    margin-top:max(26px, calc(21.8 * var(--u)));
+    gap:max(10px, calc(7 * var(--u)));
+  }
+  .mhu-hero .btn-lg{
+    height:max(44px, calc(39 * var(--u)));
+    border-radius:max(22px, calc(19.5 * var(--u)));
+    font-size:max(15px, calc(13.3 * var(--u)));
+    gap:max(10px, calc(9 * var(--u)));
+  }
+  .mhu-hero .btn-primary{
+    padding-left:max(21px, calc(18.2 * var(--u)));
+    padding-right:max(22px, calc(19.2 * var(--u)));
+  }
+  .mhu-hero .btn-ghost{
+    padding-left:max(20px, calc(17.4 * var(--u)));
+    padding-right:max(21px, calc(18.4 * var(--u)));
+  }
+  .mhu-hero .btn-lg .arw{
+    width:max(14px, calc(13 * var(--u)));
+    height:max(11.6px, calc(10.8 * var(--u)));
+  }
+  .mhu-hero .menu{
+    position:absolute;top:calc(max(58px, calc(67 * var(--u))) - 6px);
+    right:max(24px, calc(28 * var(--u)));width:min(320px, calc(100vw - 48px));
+    background:rgba(10,10,12,.86);-webkit-backdrop-filter:blur(22px);
+    backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,.09);
+    border-radius:20px;padding:10px 8px 12px;flex-direction:column;
+    box-shadow:0 24px 60px rgba(0,0,0,.55);transform-origin:top right;z-index:5;
+  }
+  .mhu-hero .menu.open{ display:flex;animation:mhuHeroMenuIn .18s ease both; }
+  .mhu-hero .menu a{
+    color:var(--ink-muted);text-decoration:none;font-size:15px;font-weight:500;
+    letter-spacing:calc(-0.15 * var(--u));padding:12px 14px;border-radius:12px;
+    transition:background .18s ease,color .18s ease;
+  }
+  .mhu-hero .menu a:hover{ background:rgba(255,255,255,.06);color:#fff; }
+  .mhu-hero .menu .divider{ height:1px;background:rgba(255,255,255,.08);margin:8px 14px; }
+  .mhu-hero .menu .m-start{
+    display:flex;align-items:center;justify-content:center;gap:9px;
+    background:var(--white-btn);color:var(--btn-ink);margin:6px 8px 0;padding:13px 16px;
+    border-radius:14px;font-weight:600;
+  }
+  .mhu-hero .menu .m-start:hover{ background:#fff;color:var(--btn-ink); }
+  .mhu-hero .menu .m-start .arw{ width:13px;height:11px; }
+}
+
+/* --- MOBILE: max-width 552px --- */
+@media (max-width:552px){
+  .mhu-hero{ --u: 1px; }
+  .mhu-hero .nav{ height:56px;padding:0 20px; }
+  .mhu-hero .logo{ font-size:20px;letter-spacing:-.4px; }
+  .mhu-hero .logo img{ width:26px;height:26px; }
+  .mhu-hero .burger{ width:42px;height:36px; }
+  .mhu-hero .hero-inner{
+    position:absolute;left:0;right:0;top:50%;width:auto;max-width:none;
+    padding:0 20px;transform:translateY(-47%);
+  }
+  .mhu-hero h1{
+    font-size:min(74px, calc((100vw - 44px) / 6.9));
+    line-height:1.04;letter-spacing:-.02em;
+  }
+  .mhu-hero .sub{
+    margin-top:16px;font-size:clamp(15.5px, 4vw, 16.5px);line-height:1.6;
+    letter-spacing:0;max-width:42ch;margin-left:auto;margin-right:auto;
+  }
+  .mhu-hero .sub br{ display:none; }
+  .mhu-hero .ctas{ margin-top:24px;gap:10px;transform:none;flex-wrap:wrap; }
+  .mhu-hero .btn-lg{ height:46px;border-radius:23px;font-size:15px;gap:9px; }
+  .mhu-hero .btn-primary{ padding-left:20px;padding-right:21px; }
+  .mhu-hero .btn-ghost{ padding-left:19px;padding-right:20px; }
+  .mhu-hero .btn-lg .arw{ width:13px;height:11px; }
+  .mhu-hero .menu{ top:50px;left:16px;right:16px;width:auto; }
+  .mhu-hero .menu a{ font-size:15.5px;padding:13px 14px; }
+  .mhu-hero .menu .m-start{ padding:14px 16px; }
+}
+
+/* --- NARROW PHONES: max-width 353px --- */
+@media (max-width:353px){
+  .mhu-hero .ctas{ flex-direction:column;align-items:center; }
+  .mhu-hero .btn-lg{ width:min(100%,272px); }
+}
+
+/* --- SHORT LANDSCAPE --- */
+@media (max-width:552px) and (max-height:460px){
+  .mhu-hero h1{ font-size:min(44px, calc((100vw - 44px) / 6.9)); }
+  .mhu-hero .sub{ margin-top:12px;font-size:15px;line-height:1.5; }
+  .mhu-hero .ctas{ margin-top:18px; }
+  .mhu-hero .hero-inner{ transform:translateY(-44%); }
+}
+
+/* ===================== ENTRANCE SEQUENCE ===================== */
+/* Runs once on first load, then detaches (see Hero.tsx). The background
+   video is the stage and is never animated -- only the foreground. */
+
+.mhu-hero.anim .ln{ overflow:hidden;padding-top:.26em;margin-top:-.26em; }
+.mhu-hero.anim .ln-i{ transform:translateY(100%);will-change:transform,opacity; }
+.mhu-hero.anim .logo,
+.mhu-hero.anim .nav-links a,
+.mhu-hero.anim .nav-actions .btn,
+.mhu-hero.anim .burger,
+.mhu-hero.anim .sub,
+.mhu-hero.anim .ctas .btn{
+  opacity:0;will-change:transform,opacity;
+}
+
+@keyframes mhuHeroLineRise{
+  from{ transform:translateY(100%); }
+  to{ transform:translateY(0); }
+}
+@keyframes mhuHeroSubIn{
+  from{ opacity:0;transform:translateY(calc(14 * var(--u)));filter:blur(4px); }
+  to{ opacity:1;transform:none;filter:blur(0); }
+}
+@keyframes mhuHeroSubInFlat{
+  from{ opacity:0;transform:translateY(calc(12 * var(--u))); }
+  to{ opacity:1;transform:none; }
+}
+@keyframes mhuHeroPillIn{
+  from{ opacity:0;transform:translateY(calc(8 * var(--u))) scale(.972); }
+  to{ opacity:1;transform:none; }
+}
+@keyframes mhuHeroLiftIn{
+  from{ opacity:0;transform:translateY(calc(9 * var(--u))); }
+  to{ opacity:1;transform:none; }
+}
+@keyframes mhuHeroLogoIn{
+  from{ opacity:0;transform:translateY(calc(-2.4 * var(--u))) translateY(calc(9 * var(--u))); }
+  to  { opacity:1;transform:translateY(calc(-2.4 * var(--u))); }
+}
+
+.mhu-hero.anim.go .ln-i{ animation:mhuHeroLineRise 1.05s var(--e-reveal) both; }
+.mhu-hero.anim.go .ln:nth-child(1) .ln-i{ animation-delay:.12s; }
+.mhu-hero.anim.go .ln:nth-child(2) .ln-i{ animation-delay:.22s; }
+.mhu-hero.anim.go .logo{ animation:mhuHeroLogoIn .62s var(--e-soft) .46s both; }
+.mhu-hero.anim.go .nav-links a{ animation:mhuHeroLiftIn .55s var(--e-soft) both; }
+.mhu-hero.anim.go .nav-links a:nth-child(1){ animation-delay:.540s; }
+.mhu-hero.anim.go .nav-links a:nth-child(2){ animation-delay:.585s; }
+.mhu-hero.anim.go .nav-links a:nth-child(3){ animation-delay:.630s; }
+.mhu-hero.anim.go .nav-links a:nth-child(4){ animation-delay:.675s; }
+.mhu-hero.anim.go .nav-links a:nth-child(5){ animation-delay:.720s; }
+.mhu-hero.anim.go .sub{ animation:mhuHeroSubIn .85s var(--e-reveal) .58s both; }
+.mhu-hero.anim.go .btn-login{ animation:mhuHeroPillIn .55s var(--e-soft) .68s both; }
+.mhu-hero.anim.go .burger{ animation:mhuHeroPillIn .55s var(--e-soft) .68s both; }
+.mhu-hero.anim.go .btn-nav-start{ animation:mhuHeroPillIn .55s var(--e-soft) .73s both; }
+.mhu-hero.anim.go .ctas .btn-primary{ animation:mhuHeroPillIn .70s var(--e-reveal) .90s both; }
+.mhu-hero.anim.go .ctas .btn-ghost{ animation:mhuHeroPillIn .70s var(--e-reveal) .97s both; }
+
+/* mobile: same language, restrained -- drop the focus pull */
+@media (max-width:552px){
+  .mhu-hero.anim.go .sub{ animation-name:mhuHeroSubInFlat; }
+  .mhu-hero.anim.go .ln-i{ animation-duration:.92s; }
+  .mhu-hero.anim.go .ctas .btn-primary{ animation-delay:.84s; }
+  .mhu-hero.anim.go .ctas .btn-ghost{ animation-delay:.90s; }
+}
+
+/* reduced motion -- belt and braces alongside Hero.tsx's own opt-out */
+@media (prefers-reduced-motion:reduce){
+  .mhu-hero.anim .ln{ overflow:visible;padding-top:0;margin-top:0; }
+  .mhu-hero.anim .ln-i{ transform:none; }
+  .mhu-hero.anim .logo,
+  .mhu-hero.anim .nav-links a,
+  .mhu-hero.anim .nav-actions .btn,
+  .mhu-hero.anim .burger,
+  .mhu-hero.anim .sub,
+  .mhu-hero.anim .ctas .btn{ opacity:1; }
+  .mhu-hero *{ transition:none!important;animation:none!important; }
+}

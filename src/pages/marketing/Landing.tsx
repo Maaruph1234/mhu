@@ -12,10 +12,8 @@ import {
   Users,
   ChevronDown,
 } from "lucide-react";
-import { MarketingNavbar } from "../../components/layout/MarketingNavbar";
 import { MarketingFooter } from "../../components/layout/MarketingFooter";
-import { StoreBadges } from "../../components/ui/StoreBadges";
-import { Globe } from "../../components/ui/Globe";
+import { Hero } from "../../components/marketing/Hero";
 
 const services = [
   { icon: Smartphone, title: "Airtime top-up", desc: "Instant recharge across MTN, Airtel, Glo and 9mobile." },
@@ -70,58 +68,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 export default function Landing() {
   return (
     <div className="min-h-screen bg-white">
-      <MarketingNavbar />
-
-      {/* Hero */}
-      <section className="bg-white pt-6 sm:pt-10">
-        <div className="container-xl">
-          <div className="relative overflow-hidden rounded-3xl bg-night-950 px-6 py-16 sm:px-10 lg:px-14 lg:py-24">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(61,90,254,0.18),transparent_50%)]" />
-            <div className="relative grid items-center gap-12 lg:grid-cols-2">
-          <div>
-            <h1
-              className="max-w-xl animate-fade-in-up text-4xl font-extrabold leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl"
-              style={{ animationDelay: "0.05s" }}
-            >
-              Moving money{" "}
-              <span className="text-accent-400">at internet speed</span>
-            </h1>
-            <p
-              className="mt-6 max-w-lg animate-fade-in-up text-base text-slate-400 lg:text-lg"
-              style={{ animationDelay: "0.2s" }}
-            >
-              Airtime, data, TV subscriptions, electricity bills, exam pins and instant transfers —
-              all from a single MHU Global wallet.
-            </p>
-            <div
-              className="mt-9 flex animate-fade-in-up flex-col gap-4 sm:flex-row"
-              style={{ animationDelay: "0.35s" }}
-            >
-              <Link
-                to="/register"
-                className="press-glass inline-flex items-center justify-center gap-2 rounded-full bg-accent px-6 py-3 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-accent-600"
-              >
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white" />
-                Create free account
-              </Link>
-              <Link
-                to="/login"
-                className="press-glass inline-flex items-center justify-center gap-2 rounded-full border border-white/25 px-6 py-3 text-xs font-bold uppercase tracking-wide text-white transition hover:border-accent-400/60 hover:bg-white/5"
-              >
-                I already have an account
-              </Link>
-            </div>
-            <div className="mt-10 animate-fade-in-up" style={{ animationDelay: "0.5s" }}>
-              <StoreBadges variant="light" />
-            </div>
-          </div>
-          <div className="animate-scale-in" style={{ animationDelay: "0.25s" }}>
-            <Globe />
-          </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      <Hero />
 
       {/* Services */}
       <section id="services" className="container-xl py-20">
@@ -146,7 +93,7 @@ export default function Landing() {
       </section>
 
       {/* Trust strip */}
-      <section className="bg-white py-6">
+      <section id="security" className="bg-white py-6">
         <div className="container-xl">
           <div className="grid gap-8 rounded-3xl border border-accent-100 bg-accent-50/50 px-6 py-12 sm:grid-cols-3 sm:px-10">
           <div className="flex items-start gap-4">

@@ -7,6 +7,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="MHU Global — send money, buy airtime, data, TV subscriptions, pay electricity bills, and more, all in one wallet." />
     <title>MHU Global — Move Money, Instantly</title>
+    <!-- Used by the marketing hero (src/components/marketing/Hero.tsx) --
+         display=block per that component's design spec: its entrance
+         animation already waits on document.fonts.ready before playing, so
+         a swap would briefly show/hide the fallback font ahead of that. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;800&display=block"
+      rel="stylesheet"
+    />
   </head>
   <body>
     <div id="root"></div>
