@@ -1,10 +1,10 @@
-// DEPRECATED: this file is no longer imported by any page. Korapay has been
-// replaced by Payvessel as the wallet-funding/payout/BVN provider for both
-// the website and the Flutter app -- see src/lib/payvessel.ts for the
-// current implementation, which has the identical API surface. This file is
-// left in place (unused) rather than deleted, since this connected project
-// folder doesn't allow file deletion from this tool; delete
-// src/lib/korapay.ts by hand if you want it fully gone.
+// ACTIVE: this is the real implementation behind src/lib/payvessel.ts, which
+// is now a thin re-export shim over everything in this file (switched back
+// from Payvessel to Korapay -- see payvessel.ts's own header comment). Kept
+// under this filename/module boundary rather than renamed, since
+// payvessel.ts already imports from here by name and Register.tsx/
+// FundWallet.tsx/SendMoney etc. all go through payvessel.ts, not this file
+// directly.
 import { supabase, extractFunctionErrorMessage } from "./supabaseClient";
 import { isDemoMode } from "./demoMode";
 import type { KorapayAccount } from "../types";
@@ -17,19 +17,25 @@ import type { KorapayAccount } from "../types";
  * wallet, exactly like the "Create Virtual Bank Account" flow documented at
  * developers.korapay.com/docs/virtual-bank-accounts-ngn.
  *
- * Two Supabase Edge Functions do the actual API talking, because Korapay's
+ * Five Supabase Edge Functions do the actual API talking, because Korapay's
  * secret key (sk_test_xxx / sk_live_xxx) must never reach the browser:
  *
+ *   - korapay-verify-bvn / korapay-verify-nin: identity checks at
+ *     registration (see Register.tsx) -- public/no-JWT since they run
+ *     before signup.
  *   - korapay-create-account: called once per user (after they submit their
  *     BVN, which Korapay requires by regulation for KYC) to create their
  *     Virtual Bank Account via POST /merchant/api/v1/virtual-bank-account,
  *     then stores the returned account in the `korapay_accounts` table.
  *   - korapay-webhook: a public endpoint Korapay calls whenever money lands
- *     in one of those virtual accounts (event "charge.success"). It
+ *     in one of those virtual accounts (event "charge.success"), or a bank
+ *     payout resolves (event "transfer.success"/"transfer.failed"). It
  *     verifies the x-korapay-signature header, credits the matching user's
  *     wallet_balance, and logs a transaction. Configure its URL as your
  *     webhook URL in the Kora dashboard (API Configuration tab) -- see
  *     README.md.
+ *   - korapay-payout: "Transfer to bank" -- listing banks, resolving an
+ *     account name, and initiating the actual payout.
  *
  * In demo mode there's no real account to fetch or create -- FundWallet.tsx
  * shows a fabricated bank account instead, so this module is simply not
@@ -82,19 +88,46 @@ export interface VerifyBvnInput {
 export interface VerifyBvnResult {
   verified: boolean;
   reason?: string;
-  // Present when verified: true -- the BVN record's own name/phone, used to
-  // populate the new account instead of whatever was typed on the form.
-  firstName?: string;
-  lastName?: string;
-  phone?: string;
+  // Kora's Basic-style lookup (unlike Payvessel's Basic BVN/NIN, which
+  // returned only match verdicts) does hand back the record's own data, but
+  // there's no reason to distrust what the user typed once it's matched --
+  // kept as verdict-only here to match the established call-site contract
+  // (Register.tsx already just uses what was typed on a verified: true).
+  phoneWarning?: string | null;
 }
 
 export async function verifyBvn(input: VerifyBvnInput): Promise<VerifyBvnResult> {
   if (isDemoMode) {
     await new Promise((r) => setTimeout(r, 700));
-    return { verified: true, firstName: input.firstName, lastName: input.lastName, phone: input.phone };
+    return { verified: true };
   }
   const { data, error } = await supabase.functions.invoke("korapay-verify-bvn", {
+    body: input,
+  });
+  if (error) throw new Error(await extractFunctionErrorMessage(error));
+  return data as VerifyBvnResult;
+}
+
+export interface VerifyNinInput {
+  nin: string;
+  firstName: string;
+  middleName?: string;
+  lastName: string;
+  gender: "MALE" | "FEMALE";
+  birthday: string;
+  phone: string;
+}
+
+// Real Kora NIN Lookup (merchant/api/v1/identities/ng/nin) via its own
+// edge function -- previously this just re-routed the NIN value through the
+// BVN endpoint's `bvn` field, which would never validly match against Kora's
+// BVN records.
+export async function verifyNin(input: VerifyNinInput): Promise<VerifyBvnResult> {
+  if (isDemoMode) {
+    await new Promise((r) => setTimeout(r, 700));
+    return { verified: true };
+  }
+  const { data, error } = await supabase.functions.invoke("korapay-verify-nin", {
     body: input,
   });
   if (error) throw new Error(await extractFunctionErrorMessage(error));
@@ -152,6 +185,19 @@ export async function resolveAccount(bankCode: string, accountNumber: string): P
   });
   if (error) throw new Error(await extractFunctionErrorMessage(error));
   return (data as { accountName: string }).accountName;
+}
+
+export async function checkTransferStatus(reference: string): Promise<"pending" | "successful" | "failed"> {
+  if (isDemoMode) return "successful";
+  try {
+    const { data, error } = await supabase.functions.invoke("korapay-payout", {
+      body: { action: "status", reference },
+    });
+    if (error) return "pending";
+    return (data as { status?: "pending" | "successful" | "failed" })?.status ?? "pending";
+  } catch {
+    return "pending";
+  }
 }
 
 export async function payoutToBank(input: BankPayoutInput): Promise<BankPayoutResult> {

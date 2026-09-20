@@ -34,11 +34,10 @@ export interface XpressWalletAccount {
   updated_at: string;
 }
 
-// Not currently used (Xpress Wallet connectivity was never confirmed) --
-// Korapay was the active wallet-funding provider, replaced by Payvessel
-// (see PayvesselAccount below). Kept here in case either Korapay or Xpress
-// Wallet gets revisited later; nothing in the app references this type
-// anymore.
+// ACTIVE -- Korapay is the current wallet-funding provider (see
+// src/lib/korapay.ts and src/lib/payvessel.ts, the latter now a thin
+// re-export shim over the former). PayvesselAccount below is the one that's
+// no longer live.
 export interface KorapayAccount {
   id: string;
   user_id: string;
@@ -52,9 +51,12 @@ export interface KorapayAccount {
   updated_at: string;
 }
 
-// Payvessel is the active wallet-funding provider (see src/lib/payvessel.ts
-// and supabase/functions/payvessel-*). Matches the `payvessel_accounts`
-// table in supabase/schema.sql.
+// No longer the active wallet-funding provider (switched back to Korapay --
+// see KorapayAccount above) -- src/lib/payvessel.ts now just re-exports this
+// name as an alias for KorapayAccount so existing imports (FundWallet.tsx
+// etc.) don't need to change. Payvessel virtual USD cards (a separate
+// feature, supabase/functions/payvessel-cards) are untouched by that switch
+// and still live -- this type isn't used for those.
 export interface PayvesselAccount {
   id: string;
   user_id: string;
@@ -62,7 +64,8 @@ export interface PayvesselAccount {
   account_name: string;
   bank_name: string;
   bank_code: string;
-  tracking_reference: string;
+  tracking_reference?: string;
+  account_reference?: string;
   status: string;
   created_at: string;
   updated_at: string;

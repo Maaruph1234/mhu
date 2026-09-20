@@ -1,89 +1,53 @@
-import { supabase, extractFunctionErrorMessage } from "./supabaseClient";
-import { isDemoMode } from "./demoMode";
-import type { PayvesselAccount } from "../types";
+// This module is a thin re-export shim over src/lib/korapay.ts. The
+// wallet-funding/payout/identity provider was switched back from Payvessel
+// to Korapay (Sept 2026) -- rather than rename every import across
+// Register.tsx, FundWallet.tsx, SendMoney, Transactions.tsx etc. back to
+// "korapay", this file keeps the `payvessel` module name/API surface as the
+// stable call-site contract and just forwards everything to the real
+// Korapay implementation. See src/lib/korapay.ts for the actual logic and
+// the supabase/functions/korapay-* edge functions for the real Kora API
+// calls (endpoints/shapes confirmed against developers.korapay.com, not
+// guessed).
+import type { KorapayAccount } from "../types";
+import {
+  createAccount as createKorapayAccount,
+  getMyAccount as getMyKorapayAccount,
+  verifyBvn as verifyKorapayBvn,
+  verifyNin as verifyKorapayNin,
+  listBanks as listKorapayBanks,
+  resolveAccount as resolveKorapayAccount,
+  checkTransferStatus as checkKorapayTransferStatus,
+  payoutToBank as payoutKorapayToBank,
+  type KorapayBank,
+  type BankPayoutInput as KorapayBankPayoutInput,
+  type BankPayoutResult as KorapayBankPayoutResult,
+} from "./korapay";
 
-/**
- * Client-side wrapper around Payvessel (see docs.payvessel.com) -- the
- * wallet-funding, identity-verification, and bank-payout provider,
- * replacing Korapay. Every MHU Global user gets their own permanent NGN
- * Virtual Bank Account (a STATIC reserved account per
- * docs.payvessel.com/accept-payment/customer-reserved-account) that they
- * transfer money into to fund their in-app wallet.
- *
- * Three Supabase Edge Functions do the actual API talking, because
- * Payvessel's api-key/api-secret pair must never reach the browser:
- *
- *   - payvessel-verify-bvn: identity check at registration (see
- *     Register.tsx) -- public/no-JWT since it runs before signup.
- *   - payvessel-create-account: called once per user (after they submit
- *     their BVN) to create their virtual account via Payvessel's
- *     Create Virtual Account API, then stores it in `payvessel_accounts`.
- *   - payvessel-webhook: a public endpoint Payvessel calls whenever money
- *     lands in one of those virtual accounts (event
- *     "reserved_account.credit"), or a bank payout resolves (event
- *     "transfer.success"/"transfer.failed"/"transfer.reversed"). Configure
- *     its URL as your webhook URL in the Payvessel dashboard.
- *   - payvessel-payout: "Transfer to bank" -- listing banks, resolving an
- *     account name, and initiating the actual payout.
- *
- * In demo mode there's no real account to fetch or create -- FundWallet.tsx
- * shows a fabricated bank account instead, so this module is simply not
- * called.
- */
+export type PayvesselAccount = KorapayAccount;
+export type PayvesselBank = KorapayBank;
+export type BankPayoutInput = KorapayBankPayoutInput;
+export type BankPayoutResult = KorapayBankPayoutResult;
 
 export interface CreatePayvesselAccountInput {
   bvn: string;
-  // Optional -- normally already on file from the NIN verified at signup
-  // (see store_verified_nin.sql). Only needed here as a fallback for
-  // accounts created before that existed.
   nin?: string;
 }
 
 export async function getMyAccount(): Promise<PayvesselAccount | null> {
-  if (isDemoMode) return null;
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-  const { data, error } = await supabase
-    .from("payvessel_accounts")
-    .select("*")
-    .eq("user_id", user.id)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data as PayvesselAccount | null;
+  return getMyKorapayAccount();
 }
 
 export async function createAccount(input: CreatePayvesselAccountInput): Promise<PayvesselAccount> {
-  const { data, error } = await supabase.functions.invoke("payvessel-create-account", {
-    body: input,
-  });
-  if (error) throw new Error(await extractFunctionErrorMessage(error));
-  return data as PayvesselAccount;
+  return createKorapayAccount(input);
 }
 
-/**
- * BVN identity check used at registration -- the name, gender, date of
- * birth, and phone number someone types on the signup form must match what
- * Payvessel's Basic BVN Verification API (docs.payvessel.com/api-reference/
- * verification/basic-bvn-verification) says for that BVN, or registration
- * is declined before an account is ever created. Called *before*
- * supabase.auth.signUp(), so this hits a public/no-JWT edge function
- * (payvessel-verify-bvn) rather than one gated behind a session.
- *
- * Switched from Enhanced to Basic (Sept 2026) after Payvessel's Enhanced
- * endpoint was confirmed -- live, in their own docs playground, on a real
- * BVN -- to intermittently return a different person's identity. Basic
- * doesn't hand back the BVN record's own name/phone (only match verdicts),
- * so on success the caller just uses what the user already typed.
- */
 export interface VerifyBvnInput {
   bvn: string;
   firstName: string;
   middleName?: string;
   lastName: string;
   gender: "MALE" | "FEMALE";
-  birthday: string; // YYYY-MM-DD
+  birthday: string;
   phone: string;
 }
 
@@ -91,149 +55,41 @@ export interface VerifyBvnResult {
   verified: boolean;
   reason?: string;
   matchPercentage?: number | null;
-  // Only ever set by verifyNin (Basic NIN Verification treats a phone
-  // mismatch as a soft warning, not a hard block -- see
-  // payvessel-verify-nin's header comment for why).
   phoneWarning?: string | null;
 }
 
-export async function verifyBvn(input: VerifyBvnInput): Promise<VerifyBvnResult> {
-  if (isDemoMode) {
-    await new Promise((r) => setTimeout(r, 700));
-    return { verified: true, matchPercentage: 100 };
-  }
-  const { data, error } = await supabase.functions.invoke("payvessel-verify-bvn", {
-    body: input,
-  });
-  if (error) throw new Error(await extractFunctionErrorMessage(error));
-  return data as VerifyBvnResult;
-}
-
-/**
- * NIN identity check used at registration -- same idea as verifyBvn, but
- * against NIN instead (switched Sept 2026 after BVN verification kept
- * genuinely failing name-match checks). Mirrors payvessel-verify-bvn's
- * request/response shape exactly (see payvessel-verify-nin's header
- * comment) -- only the field name (nin vs bvn) differs.
- */
 export interface VerifyNinInput {
   nin: string;
   firstName: string;
   middleName?: string;
   lastName: string;
   gender: "MALE" | "FEMALE";
-  birthday: string; // YYYY-MM-DD
+  birthday: string;
   phone: string;
 }
 
 export type VerifyNinResult = VerifyBvnResult;
 
+export async function verifyBvn(input: VerifyBvnInput): Promise<VerifyBvnResult> {
+  return verifyKorapayBvn(input);
+}
+
 export async function verifyNin(input: VerifyNinInput): Promise<VerifyNinResult> {
-  if (isDemoMode) {
-    await new Promise((r) => setTimeout(r, 700));
-    return { verified: true, matchPercentage: 100 };
-  }
-  const { data, error } = await supabase.functions.invoke("payvessel-verify-nin", {
-    body: input,
-  });
-  if (error) throw new Error(await extractFunctionErrorMessage(error));
-  return data as VerifyNinResult;
-}
-
-/**
- * "Transfer to bank" -- sending money OUT of the wallet to an external
- * Nigerian bank account, via Payvessel's Transfers API. Routed through the
- * `payvessel-payout` Edge Function for the same secret-key reasons.
- */
-export interface PayvesselBank {
-  name: string;
-  code: string;
-}
-
-export interface BankPayoutInput {
-  bankCode: string;
-  accountNumber: string;
-  accountName: string;
-  amount: number;
-  narration?: string;
-}
-
-export interface BankPayoutResult {
-  success: boolean;
-  reference: string;
-  message: string;
+  return verifyKorapayNin(input);
 }
 
 export async function listBanks(): Promise<PayvesselBank[]> {
-  if (isDemoMode) {
-    return [
-      { name: "Access Bank", code: "044" },
-      { name: "GTBank", code: "058" },
-      { name: "UBA", code: "033" },
-      { name: "Zenith Bank", code: "057" },
-    ];
-  }
-  const { data, error } = await supabase.functions.invoke("payvessel-payout", {
-    body: { action: "banks" },
-  });
-  if (error) throw new Error(await extractFunctionErrorMessage(error));
-  return (data as { banks: PayvesselBank[] }).banks;
+  return listKorapayBanks();
 }
 
 export async function resolveAccount(bankCode: string, accountNumber: string): Promise<string> {
-  if (isDemoMode) {
-    await new Promise((r) => setTimeout(r, 500));
-    return "Chidinma Okafor";
-  }
-  const { data, error } = await supabase.functions.invoke("payvessel-payout", {
-    body: { action: "resolve", bankCode, accountNumber },
-  });
-  if (error) throw new Error(await extractFunctionErrorMessage(error));
-  return (data as { accountName: string }).accountName;
+  return resolveKorapayAccount(bankCode, accountNumber);
 }
 
-// Polls payvessel-payout's "status" action, which calls Payvessel's real,
-// documented Transfer Status endpoint directly -- unlike the
-// "transfer.success"/"transfer.failed" webhook events (guessed from
-// generic docs), which have never actually been observed firing for a real
-// payout. This is what lets a bank_transfer_out stop showing "pending"
-// once the money has genuinely landed, without depending on that webhook
-// at all. Called for every pending bank_transfer_out whenever Transactions
-// loads (see Transactions.tsx) -- safe to call repeatedly, a already-
-// resolved transaction just short-circuits server-side.
 export async function checkTransferStatus(reference: string): Promise<"pending" | "successful" | "failed"> {
-  if (isDemoMode) return "successful";
-  const { data, error } = await supabase.functions.invoke("payvessel-payout", {
-    body: { action: "status", reference },
-  });
-  if (error) throw new Error(await extractFunctionErrorMessage(error));
-  return (data as { status: "pending" | "successful" | "failed" }).status;
+  return checkKorapayTransferStatus(reference);
 }
 
 export async function payoutToBank(input: BankPayoutInput): Promise<BankPayoutResult> {
-  if (isDemoMode) {
-    const { demoStore } = await import("./demoStore");
-    await new Promise((r) => setTimeout(r, 900));
-    const wallet = demoStore.getWallet();
-    const reference = `TRFBANK-${Date.now()}`;
-    if (input.amount > wallet.balance) {
-      return { success: false, reference, message: "Insufficient wallet balance" };
-    }
-    demoStore.record(
-      {
-        type: "bank_transfer_out",
-        amount: input.amount,
-        status: "successful",
-        reference,
-        title: `Bank transfer to ${input.accountName || input.accountNumber}`,
-      },
-      -input.amount
-    );
-    return { success: true, reference, message: "Bank transfer successful" };
-  }
-  const { data, error } = await supabase.functions.invoke("payvessel-payout", {
-    body: input,
-  });
-  if (error) throw new Error(await extractFunctionErrorMessage(error));
-  return data as BankPayoutResult;
+  return payoutKorapayToBank(input);
 }
