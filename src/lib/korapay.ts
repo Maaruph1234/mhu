@@ -1,41 +1,32 @@
-// ACTIVE: this is the real implementation behind src/lib/payvessel.ts, which
-// is now a thin re-export shim over everything in this file (switched back
-// from Payvessel to Korapay -- see payvessel.ts's own header comment). Kept
-// under this filename/module boundary rather than renamed, since
-// payvessel.ts already imports from here by name and Register.tsx/
-// FundWallet.tsx/SendMoney etc. all go through payvessel.ts, not this file
-// directly.
+// PARTIALLY ACTIVE: only verifyBvn/verifyNin (identity checks at signup,
+// called from Register.tsx via the payvessel.ts shim) are still live. The
+// wallet-funding/payout functions below (getMyAccount, createAccount,
+// listBanks, resolveAccount, checkTransferStatus, payoutToBank) are NOT
+// called by anything anymore -- Xpress Wallet replaced Korapay for wallet
+// funding and bank payouts (Sept 2026, see src/lib/xpressWallet.ts and
+// payvessel.ts's header comment). Left in place unused rather than
+// deleted, in case Korapay is ever revisited.
 import { supabase, extractFunctionErrorMessage } from "./supabaseClient";
 import { isDemoMode } from "./demoMode";
 import type { KorapayAccount } from "../types";
 
 /**
- * Client-side wrapper around Korapay (see developers.korapay.com) -- the
- * wallet-funding rail. Every MHU Global user gets their own permanent NGN
- * Virtual Bank Account (a real dedicated account number, backed by a bank
- * like Wema/Fidelity) that they transfer money into to fund their in-app
- * wallet, exactly like the "Create Virtual Bank Account" flow documented at
- * developers.korapay.com/docs/virtual-bank-accounts-ngn.
+ * Client-side wrapper around Korapay (see developers.korapay.com).
+ * verifyBvn/verifyNin below are the live part of this file -- identity
+ * checks at registration (see Register.tsx), via two public/no-JWT edge
+ * functions (korapay-verify-bvn, korapay-verify-nin) since they run before
+ * signup.
  *
- * Five Supabase Edge Functions do the actual API talking, because Korapay's
- * secret key (sk_test_xxx / sk_live_xxx) must never reach the browser:
- *
- *   - korapay-verify-bvn / korapay-verify-nin: identity checks at
- *     registration (see Register.tsx) -- public/no-JWT since they run
- *     before signup.
- *   - korapay-create-account: called once per user (after they submit their
- *     BVN, which Korapay requires by regulation for KYC) to create their
- *     Virtual Bank Account via POST /merchant/api/v1/virtual-bank-account,
- *     then stores the returned account in the `korapay_accounts` table.
- *   - korapay-webhook: a public endpoint Korapay calls whenever money lands
- *     in one of those virtual accounts (event "charge.success"), or a bank
- *     payout resolves (event "transfer.success"/"transfer.failed"). It
- *     verifies the x-korapay-signature header, credits the matching user's
- *     wallet_balance, and logs a transaction. Configure its URL as your
- *     webhook URL in the Kora dashboard (API Configuration tab) -- see
- *     README.md.
- *   - korapay-payout: "Transfer to bank" -- listing banks, resolving an
- *     account name, and initiating the actual payout.
+ * Everything else here (getMyAccount, createAccount, listBanks,
+ * resolveAccount, checkTransferStatus, payoutToBank) was the wallet-funding
+ * rail before Xpress Wallet replaced it: every user got a permanent NGN
+ * Virtual Bank Account via korapay-create-account (POST
+ * /merchant/api/v1/virtual-bank-account), funded/credited via
+ * korapay-webhook (events "charge.success"/"transfer.success"/
+ * "transfer.failed", x-korapay-signature verified), with korapay-payout
+ * handling "Transfer to bank". All three edge functions are still deployed
+ * and functionally correct, just unused -- nothing client-side calls them
+ * anymore.
  *
  * In demo mode there's no real account to fetch or create -- FundWallet.tsx
  * shows a fabricated bank account instead, so this module is simply not

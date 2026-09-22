@@ -5,37 +5,33 @@ import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { useAuth } from "../../context/AuthContext";
 import { isDemoMode } from "../../lib/demoMode";
-import * as payvessel from "../../lib/payvessel";
-import type { PayvesselAccount } from "../../types";
+import * as xpressWallet from "../../lib/xpressWallet";
+import type { XpressWalletAccount } from "../../types";
 
 export default function FundWallet() {
   const { profile } = useAuth();
   const [copied, setCopied] = useState(false);
 
-  const [account, setAccount] = useState<PayvesselAccount | null>(null);
+  const [account, setAccount] = useState<XpressWalletAccount | null>(null);
   const [loadingAccount, setLoadingAccount] = useState(!isDemoMode);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
   const [bvn, setBvn] = useState("");
-  const [nin, setNin] = useState("");
-  // Only revealed if the backend comes back with "nin is required" --
-  // happens for accounts created before store_verified_nin.sql existed, so
-  // there's nothing on file yet to reuse. Rather than leaving the user
-  // stuck on a raw server error, let them fill it in this one time.
-  const [needsNin, setNeedsNin] = useState(false);
+  const [dateOfBirth, setDateOfBirth] = useState("");
+  const [address, setAddress] = useState("");
 
   useEffect(() => {
     if (isDemoMode) {
       setLoadingAccount(false);
       return;
     }
-    payvessel
+    xpressWallet
       .getMyAccount()
       .then(setAccount)
       .finally(() => setLoadingAccount(false));
   }, []);
 
-  // In demo mode there's no real Korapay account to create — show a
+  // In demo mode there's no real Xpress Wallet account to create — show a
   // realistic virtual account immediately, same as every other screen in
   // demo mode.
   const virtualAccount = isDemoMode
@@ -61,28 +57,20 @@ export default function FundWallet() {
       setCreateError("Enter a valid 11-digit BVN");
       return;
     }
-    if (needsNin && nin.length !== 11) {
-      setCreateError("Enter your 11-digit NIN");
+    if (!dateOfBirth) {
+      setCreateError("Enter your date of birth");
+      return;
+    }
+    if (!address.trim()) {
+      setCreateError("Enter your address");
       return;
     }
     setCreating(true);
     try {
-      // NIN isn't asked for here by default -- it's already on file from
-      // the one verified at signup (see store_verified_nin.sql). Accounts
-      // created before that existed won't have one on file though, so the
-      // edge function returns a clear "nin is required" error for those --
-      // caught below to reveal the NIN field as a one-time fallback instead
-      // of leaving the user stuck on a raw server error.
-      const created = await payvessel.createAccount({ bvn, ...(needsNin ? { nin } : {}) });
+      const created = await xpressWallet.createAccount({ bvn, dateOfBirth, address: address.trim() });
       setAccount(created);
     } catch (err) {
-      const message = (err as Error).message;
-      if (!needsNin && message.toLowerCase().includes("nin")) {
-        setNeedsNin(true);
-        setCreateError("We don't have a NIN on file for this account yet — enter it below to continue.");
-      } else {
-        setCreateError(message);
-      }
+      setCreateError((err as Error).message);
     } finally {
       setCreating(false);
     }
@@ -103,9 +91,9 @@ export default function FundWallet() {
           <div className="flex gap-3 rounded-xl border border-accent/20 bg-accent/5 p-4 text-sm text-slate-600">
             <ShieldCheck size={18} className="mt-0.5 shrink-0 text-accent" />
             <p>
-              We need your BVN to generate a dedicated bank account in your name. This is a one-time
-              step required by regulation — it's sent securely and never stored beyond what's needed to
-              create the account. (Your NIN is already on file from signup, so we don't need to ask again.)
+              We need your BVN, date of birth, and address to generate a dedicated bank account in
+              your name. This is a one-time step required by regulation — it's sent securely and only
+              used to create the account.
             </p>
           </div>
           <div className="mt-4 space-y-3">
@@ -116,15 +104,18 @@ export default function FundWallet() {
               onChange={(e) => setBvn(e.target.value)}
               maxLength={11}
             />
-            {needsNin && (
-              <Input
-                label="NIN"
-                placeholder="11-digit NIN"
-                value={nin}
-                onChange={(e) => setNin(e.target.value)}
-                maxLength={11}
-              />
-            )}
+            <Input
+              label="Date of birth"
+              type="date"
+              value={dateOfBirth}
+              onChange={(e) => setDateOfBirth(e.target.value)}
+            />
+            <Input
+              label="Address"
+              placeholder="Your home or business address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+            />
             {createError && <p className="text-xs text-red-500">{createError}</p>}
             <Button fullWidth loading={creating} onClick={handleCreateAccount}>
               Generate my funding account

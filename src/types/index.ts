@@ -20,6 +20,12 @@ export interface Profile {
   created_at: string;
 }
 
+// ACTIVE -- Xpress Wallet (Providus Bank) is the current wallet-funding
+// provider (switched back from Korapay, Sept 2026 -- see
+// src/lib/xpressWallet.ts and .env.example). Unlike Korapay/Payvessel
+// before it, the dedicated account this creates is a REAL Providus Bank
+// account with its own live balance, not a pass-through virtual account --
+// see src/lib/xpressWallet.ts's header comment.
 export interface XpressWalletAccount {
   id: string;
   user_id: string;
@@ -34,10 +40,12 @@ export interface XpressWalletAccount {
   updated_at: string;
 }
 
-// ACTIVE -- Korapay is the current wallet-funding provider (see
-// src/lib/korapay.ts and src/lib/payvessel.ts, the latter now a thin
-// re-export shim over the former). PayvesselAccount below is the one that's
-// no longer live.
+// NO LONGER ACTIVE -- Korapay was the wallet-funding provider before Xpress
+// Wallet replaced it (Sept 2026). src/lib/korapay.ts and
+// src/lib/payvessel.ts (a thin re-export shim over it) are left in place
+// unused rather than deleted, in case any historical rows need to be
+// referenced later. PayvesselAccount below is the same story, one provider
+// further back.
 export interface KorapayAccount {
   id: string;
   user_id: string;

@@ -1,24 +1,22 @@
 // Supabase Edge Function: xpresswallet-create-wallet
 // Deploy with: supabase functions deploy xpresswallet-create-wallet
+//
 // Secrets required (set with `supabase secrets set ...`):
-//   XPRESSWALLET_BASE_URL, XPRESSWALLET_SECRET_KEY
+//   XPRESSWALLET_BASE_URL, XPRESSWALLET_EMAIL, XPRESSWALLET_PASSWORD
+//   (see _shared/xpresswallet-auth.ts for what each does)
 //
 // Creates a Customer + Wallet on Xpress Wallet (Providus Bank) for the
 // authenticated user via POST /wallet, then stores the returned dedicated
-// virtual account (account number, bank name, etc.) in the
-// `xpresswallet_accounts` table so FundWallet.tsx can display it.
+// account (a REAL Providus Bank account number, not a pass-through virtual
+// account -- see the "Create Customer Wallet" page at
+// developer.providusbank.com/xpress-wallet-api/merchant/wallet/create-customer-wallet)
+// in the `xpresswallet_accounts` table so FundWallet.tsx can display it.
 //
-// Xpress Wallet requires BVN, full name, date of birth, phone, email, and
-// address to create a wallet — see the "Create Customer Wallet" request in
-// the Xpress Wallet Postman collection for the authoritative field list and
-// response shape. This is a working template based on that collection, not
-// a confirmed-final integration — re-check field names/response shape
-// against Xpress Wallet's live docs before going to production.
+// This is the ACTIVE wallet-funding integration (switched back from
+// Korapay, Sept 2026 -- see .env.example and README.md).
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-
-const XPRESSWALLET_BASE_URL = Deno.env.get("XPRESSWALLET_BASE_URL") ?? "";
-const XPRESSWALLET_SECRET_KEY = Deno.env.get("XPRESSWALLET_SECRET_KEY") ?? "";
+import { xwLogin, xwAuthHeaders, XW_BASE_URL } from "../_shared/xpresswallet-auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -40,9 +38,12 @@ Deno.serve(async (req) => {
     }
 
     const { bvn, dateOfBirth, address } = await req.json();
-    if (!bvn || !dateOfBirth || !address) {
+    if (!bvn || bvn.length !== 11) {
+      return new Response(JSON.stringify({ error: "A valid 11-digit BVN is required" }), { status: 400 });
+    }
+    if (!dateOfBirth || !address) {
       return new Response(
-        JSON.stringify({ error: "bvn, dateOfBirth, and address are required" }),
+        JSON.stringify({ error: "dateOfBirth and address are required" }),
         { status: 400 }
       );
     }
@@ -66,16 +67,21 @@ Deno.serve(async (req) => {
     if (!profile) {
       return new Response(JSON.stringify({ error: "Profile not found" }), { status: 404 });
     }
+    if (!profile.phone_number || !profile.email) {
+      return new Response(
+        JSON.stringify({ error: "Your profile needs a phone number and email on file before you can fund your wallet" }),
+        { status: 400 }
+      );
+    }
 
     const [firstName, ...rest] = (profile.display_name || "MHU User").trim().split(" ");
     const lastName = rest.join(" ") || firstName;
 
-    const xwRes = await fetch(`${XPRESSWALLET_BASE_URL}/wallet`, {
+    const tokens = await xwLogin();
+
+    const xwRes = await fetch(`${XW_BASE_URL}/wallet`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${XPRESSWALLET_SECRET_KEY}`,
-        "Content-Type": "application/json",
-      },
+      headers: xwAuthHeaders(tokens),
       body: JSON.stringify({
         bvn,
         firstName,
@@ -92,6 +98,19 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ error: xwJson?.message ?? "Xpress Wallet could not create your account" }),
         { status: 502 }
+      );
+    }
+
+    // Xpress Wallet checks the BVN against the BVN registry and tells us
+    // whether the name we sent matches what's on file for it. Surface a
+    // clear error instead of silently creating an account under a
+    // mismatched name.
+    if (xwJson.customer?.nameMatch === false) {
+      return new Response(
+        JSON.stringify({
+          error: "The name on your profile doesn't match the name on this BVN. Update your display name to match your BVN and try again.",
+        }),
+        { status: 422 }
       );
     }
 

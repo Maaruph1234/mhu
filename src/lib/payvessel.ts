@@ -1,45 +1,37 @@
-// This module is a thin re-export shim over src/lib/korapay.ts. The
-// wallet-funding/payout/identity provider was switched back from Payvessel
-// to Korapay (Sept 2026) -- rather than rename every import across
-// Register.tsx, FundWallet.tsx, SendMoney, Transactions.tsx etc. back to
-// "korapay", this file keeps the `payvessel` module name/API surface as the
-// stable call-site contract and just forwards everything to the real
-// Korapay implementation. See src/lib/korapay.ts for the actual logic and
-// the supabase/functions/korapay-* edge functions for the real Kora API
-// calls (endpoints/shapes confirmed against developers.korapay.com, not
-// guessed).
-import type { KorapayAccount } from "../types";
+// This module is a thin re-export shim, kept so existing imports across
+// Register.tsx, Transfer.tsx, Transactions.tsx etc. don't need to change
+// every time the underlying provider does. Two different things live
+// behind this one name now, reflecting two independent provider switches:
+//
+//   - verifyBvn/verifyNin (identity verification, used at signup) still
+//     forward to Korapay (src/lib/korapay.ts) -- unrelated to wallet
+//     funding, not touched by the Sept 2026 switch below.
+//   - listBanks/resolveAccount/checkTransferStatus/payoutToBank ("Send to
+//     Bank") now forward to Xpress Wallet (src/lib/xpressWallet.ts) --
+//     switched back from Korapay, Sept 2026, alongside wallet funding.
+//
+// Wallet-funding account creation (createAccount/getMyAccount) used to live
+// here too, forwarding to whichever provider was active -- that's gone now
+// because Xpress Wallet's create-wallet call needs a different input shape
+// (bvn + dateOfBirth + address, not bvn + nin), so FundWallet.tsx imports
+// src/lib/xpressWallet.ts directly instead of going through this shim.
 import {
-  createAccount as createKorapayAccount,
-  getMyAccount as getMyKorapayAccount,
   verifyBvn as verifyKorapayBvn,
   verifyNin as verifyKorapayNin,
-  listBanks as listKorapayBanks,
-  resolveAccount as resolveKorapayAccount,
-  checkTransferStatus as checkKorapayTransferStatus,
-  payoutToBank as payoutKorapayToBank,
-  type KorapayBank,
-  type BankPayoutInput as KorapayBankPayoutInput,
-  type BankPayoutResult as KorapayBankPayoutResult,
 } from "./korapay";
+import {
+  listBanks as listXpressWalletBanks,
+  resolveAccount as resolveXpressWalletAccount,
+  checkTransferStatus as checkXpressWalletTransferStatus,
+  payoutToBank as payoutXpressWalletToBank,
+  type XpressWalletBank,
+  type BankPayoutInput as XpressWalletBankPayoutInput,
+  type BankPayoutResult as XpressWalletBankPayoutResult,
+} from "./xpressWallet";
 
-export type PayvesselAccount = KorapayAccount;
-export type PayvesselBank = KorapayBank;
-export type BankPayoutInput = KorapayBankPayoutInput;
-export type BankPayoutResult = KorapayBankPayoutResult;
-
-export interface CreatePayvesselAccountInput {
-  bvn: string;
-  nin?: string;
-}
-
-export async function getMyAccount(): Promise<PayvesselAccount | null> {
-  return getMyKorapayAccount();
-}
-
-export async function createAccount(input: CreatePayvesselAccountInput): Promise<PayvesselAccount> {
-  return createKorapayAccount(input);
-}
+export type PayvesselBank = XpressWalletBank;
+export type BankPayoutInput = XpressWalletBankPayoutInput;
+export type BankPayoutResult = XpressWalletBankPayoutResult;
 
 export interface VerifyBvnInput {
   bvn: string;
@@ -79,17 +71,17 @@ export async function verifyNin(input: VerifyNinInput): Promise<VerifyNinResult>
 }
 
 export async function listBanks(): Promise<PayvesselBank[]> {
-  return listKorapayBanks();
+  return listXpressWalletBanks();
 }
 
 export async function resolveAccount(bankCode: string, accountNumber: string): Promise<string> {
-  return resolveKorapayAccount(bankCode, accountNumber);
+  return resolveXpressWalletAccount(bankCode, accountNumber);
 }
 
 export async function checkTransferStatus(reference: string): Promise<"pending" | "successful" | "failed"> {
-  return checkKorapayTransferStatus(reference);
+  return checkXpressWalletTransferStatus(reference);
 }
 
 export async function payoutToBank(input: BankPayoutInput): Promise<BankPayoutResult> {
-  return payoutKorapayToBank(input);
+  return payoutXpressWalletToBank(input);
 }

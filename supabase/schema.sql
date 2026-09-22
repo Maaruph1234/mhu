@@ -49,6 +49,21 @@ create policy "Users can view own xpresswallet account" on public.xpresswallet_a
 -- (used inside the xpresswallet-create-wallet and xpresswallet-webhook edge
 -- functions) can write to this table.
 
+-- Raw audit log of every xpresswallet-webhook delivery, whether or not the
+-- function could make sense of it -- Xpress Wallet's webhook payload shape
+-- isn't publicly documented, so this is how the real shape gets confirmed
+-- from actual deliveries instead of guessed at again. Service-role only;
+-- nothing here is meant to be user-facing.
+create table if not exists public.xpresswallet_webhook_events (
+  id uuid primary key default uuid_generate_v4(),
+  payload jsonb not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.xpresswallet_webhook_events enable row level security;
+-- No policies at all on purpose — this table is service_role-only, not
+-- readable by any authenticated user.
+
 -- Korapay virtual bank accounts -- net new, no existing table to conflict
 -- with. 1:1 with `users`. This is the ACTIVE wallet-funding integration;
 -- xpresswallet_accounts above is left in place unused (see README.md).

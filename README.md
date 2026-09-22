@@ -249,20 +249,44 @@ Flight Orders" endpoint is business-wide the same way card listing is, so
 (the quote action's response also now includes `airlineLogoUrl`, so
 redeploy if you're updating from an older version of this function).
 
-### Korapay / Monnify (superseded, left in place unused)
-`src/lib/korapay.ts`, the four `korapay-*` edge functions, and the Flutter
-app's `monnify-payment` function are all replaced by Payvessel above and
-have been turned into `410`-returning stubs (or, for `korapay.ts`, marked
-deprecated in a header comment) rather than deleted, since delete access to
-this codebase isn't available from this tool. Nothing in either app calls
-them anymore. Safe to delete the whole files/folders by hand if you want
-them fully gone, and run `supabase functions delete <name>` to remove the
-stubs from the deployed project too.
+### Wallet funding / bank payouts — provider history (current: Xpress Wallet)
+This has switched providers more than once. As of Sept 2026:
 
-### Xpress Wallet (not currently used — left in place, unused)
-Xpress Wallet (Providus Bank) was an early wallet-funding attempt on the
-website, abandoned before Korapay (and now Payvessel). `src/lib/xpressWallet.ts`
-is left in the codebase, unused.
+- **Xpress Wallet (Providus Bank) — ACTIVE.** `src/lib/xpressWallet.ts` plus
+  `xpresswallet-create-wallet`, `xpresswallet-transfer`, `xpresswallet-webhook`,
+  and `_shared/xpresswallet-auth.ts` power Fund Wallet and Transfer → Transfer
+  to bank. Endpoints confirmed against developer.providusbank.com's live
+  docs. Unlike every provider before it, the dedicated account created per
+  user is a REAL Providus Bank account with its own live balance on Xpress
+  Wallet's side (not a pass-through virtual account) — this app still keeps
+  `users.wallet_balance` as the single source of truth for spending
+  everywhere else, kept in sync by these functions rather than read from
+  Xpress Wallet directly. See `.env.example`'s Xpress Wallet section for
+  required secrets and two open unknowns worth confirming against a real
+  sandbox call before going live: whether login credentials need base64
+  encoding, and the real webhook payload shape (logged to
+  `xpresswallet_webhook_events` for exactly this reason).
+- **Korapay — narrowed to BVN/NIN verification at signup only.**
+  `korapay-verify-bvn` / `korapay-verify-nin` (via `src/lib/korapay.ts`,
+  called through the `payvessel.ts` shim from Register.tsx) are still real
+  and active. `korapay-create-account`, `korapay-payout`, and
+  `korapay-webhook` were a fully working wallet-funding/payout
+  implementation (not stubs) that Xpress Wallet has now replaced — left
+  deployed but uncalled by either app.
+- **Payvessel** — never was the wallet-funding rail despite the name; see
+  the Payvessel section above for what it's actually used for (USD virtual
+  cards, eSIM, flight booking, extra-ID verification). `src/lib/payvessel.ts`
+  is a thin re-export shim: `verifyBvn`/`verifyNin` forward to Korapay,
+  `listBanks`/`resolveAccount`/`checkTransferStatus`/`payoutToBank` forward
+  to Xpress Wallet. Kept as a stable import name across call sites rather
+  than renamed every time the underlying provider changes.
+- **Monnify** (Flutter app's `monnify-payment` function) — untouched by any
+  of the above; not part of this history.
+
+None of the unused Korapay wallet-funding functions were deleted (delete
+access to this codebase isn't available from this tool) — safe to remove by
+hand, and `supabase functions delete <name>` to drop the deployed copies,
+if you want them fully gone.
 
 ### App Store / Play Store badges
 - Set `VITE_APP_STORE_URL` and `VITE_PLAY_STORE_URL` in `.env` once the
@@ -276,10 +300,11 @@ src/
   components/dashboard/   IdentityVerificationCard (Profile page section)
   components/layout/      Marketing nav/footer, dashboard sidebar, auth layout
   context/                 AuthContext (Supabase auth), WalletContext (balance + transactions)
-  lib/                     supabaseClient, smsala.ts, vtpass.ts, provibill.ts, korapay.ts (superseded),
-                           payvessel.ts, virtualCards.ts, identityVerification.ts, esim.ts, flights.ts,
-                           xpressWallet.ts, format.ts (client-side service wrappers --
-                           provibill.ts/korapay.ts/xpressWallet.ts unused, kept for reference)
+  lib/                     supabaseClient, smsala.ts, vtpass.ts, provibill.ts (unused), korapay.ts
+                           (BVN/NIN verification active; wallet-funding/payout parts unused),
+                           payvessel.ts (shim -- see provider-history section above), xpressWallet.ts
+                           (ACTIVE for wallet funding + bank payouts), virtualCards.ts,
+                           identityVerification.ts, esim.ts, flights.ts, format.ts
   data/reference.ts        Static network/TV/disco/exam-body reference data (placeholders — see above)
   pages/marketing/         Landing page
   pages/auth/              Login, Register, OTP verification, Forgot password
@@ -287,8 +312,9 @@ src/
                            VirtualCard, Esim, FlightBooking, Transactions, Referrals, Profile
 supabase/
   schema.sql               Tables, RLS policies, transfer_funds RPC
-  functions/                Edge functions that hold the real VTpass/Smsala/Payvessel secret keys
-                           (plus unused Provibill/Xpress Wallet/Korapay ones, the latter now 410 stubs)
+  functions/                Edge functions that hold the real VTpass/Smsala/Payvessel/Korapay/
+                           Xpress Wallet secret keys (plus unused Provibill ones, and the Korapay
+                           wallet-funding/payout functions Xpress Wallet replaced)
 ```
 
 ## 4. Why VTpass/Payvessel/Smsala calls go through Supabase Edge Functions
