@@ -3,22 +3,31 @@
 // every time the underlying provider does. Two different things live
 // behind this one name now, reflecting two independent provider switches:
 //
-//   - verifyBvn/verifyNin (identity verification, used at signup) still
-//     forward to Korapay (src/lib/korapay.ts) -- unrelated to wallet
-//     funding, not touched by the Sept 2026 switch below.
+//   - verifyBvn/verifyNin (identity verification, used at signup) call the
+//     REAL Payvessel identity-verification product directly (Basic NIN/BVN
+//     Verification -- see supabase/functions/payvessel-verify-nin and
+//     payvessel-verify-bvn) -- a completely different Payvessel product from
+//     the old wallet-funding one that got replaced by Xpress Wallet below.
+//     Payvessel is NOT Korapay and NOT Xpress Wallet -- it's a third,
+//     separate provider that's only ever done identity verification here.
+//     FIXED Sept 2026: this used to forward to Korapay's verify-nin/verify-bvn
+//     (src/lib/korapay.ts) even though Register.tsx's own comments and the
+//     payvessel-verify-nin edge function already assumed Payvessel -- a
+//     leftover from an incomplete migration. The Flutter app's
+//     register_screen.dart already called payvessel-verify-nin directly and
+//     never had this bug; this brings the website in line with it and
+//     removes the last live Korapay call anywhere in either codebase.
 //   - listBanks/resolveAccount/checkTransferStatus/payoutToBank ("Send to
-//     Bank") now forward to Xpress Wallet (src/lib/xpressWallet.ts) --
-//     switched back from Korapay, Sept 2026, alongside wallet funding.
+//     Bank") forward to Xpress Wallet (src/lib/xpressWallet.ts) -- switched
+//     back from Korapay, Sept 2026, alongside wallet funding.
 //
 // Wallet-funding account creation (createAccount/getMyAccount) used to live
 // here too, forwarding to whichever provider was active -- that's gone now
 // because Xpress Wallet's create-wallet call needs a different input shape
 // (bvn + dateOfBirth + address, not bvn + nin), so FundWallet.tsx imports
 // src/lib/xpressWallet.ts directly instead of going through this shim.
-import {
-  verifyBvn as verifyKorapayBvn,
-  verifyNin as verifyKorapayNin,
-} from "./korapay";
+import { supabase, extractFunctionErrorMessage } from "./supabaseClient";
+import { isDemoMode } from "./demoMode";
 import {
   listBanks as listXpressWalletBanks,
   resolveAccount as resolveXpressWalletAccount,
@@ -63,11 +72,27 @@ export interface VerifyNinInput {
 export type VerifyNinResult = VerifyBvnResult;
 
 export async function verifyBvn(input: VerifyBvnInput): Promise<VerifyBvnResult> {
-  return verifyKorapayBvn(input);
+  if (isDemoMode) {
+    await new Promise((r) => setTimeout(r, 700));
+    return { verified: true };
+  }
+  const { data, error } = await supabase.functions.invoke("payvessel-verify-bvn", {
+    body: input,
+  });
+  if (error) throw new Error(await extractFunctionErrorMessage(error));
+  return data as VerifyBvnResult;
 }
 
 export async function verifyNin(input: VerifyNinInput): Promise<VerifyNinResult> {
-  return verifyKorapayNin(input);
+  if (isDemoMode) {
+    await new Promise((r) => setTimeout(r, 700));
+    return { verified: true };
+  }
+  const { data, error } = await supabase.functions.invoke("payvessel-verify-nin", {
+    body: input,
+  });
+  if (error) throw new Error(await extractFunctionErrorMessage(error));
+  return data as VerifyNinResult;
 }
 
 export async function listBanks(): Promise<PayvesselBank[]> {

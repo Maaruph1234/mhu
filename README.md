@@ -266,27 +266,32 @@ This has switched providers more than once. As of Sept 2026:
   sandbox call before going live: whether login credentials need base64
   encoding, and the real webhook payload shape (logged to
   `xpresswallet_webhook_events` for exactly this reason).
-- **Korapay — narrowed to BVN/NIN verification at signup only.**
-  `korapay-verify-bvn` / `korapay-verify-nin` (via `src/lib/korapay.ts`,
-  called through the `payvessel.ts` shim from Register.tsx) are still real
-  and active. `korapay-create-account`, `korapay-payout`, and
-  `korapay-webhook` were a fully working wallet-funding/payout
-  implementation (not stubs) that Xpress Wallet has now replaced — left
-  deployed but uncalled by either app.
-- **Payvessel** — never was the wallet-funding rail despite the name; see
-  the Payvessel section above for what it's actually used for (USD virtual
-  cards, eSIM, flight booking, extra-ID verification). `src/lib/payvessel.ts`
-  is a thin re-export shim: `verifyBvn`/`verifyNin` forward to Korapay,
+- **Korapay — REMOVED (Sept 2026).** Nothing in either app calls Korapay
+  anymore. Its one remaining job, BVN/NIN verification at signup, moved to
+  Payvessel (`payvessel-verify-bvn`/`payvessel-verify-nin`) — the website's
+  `src/lib/payvessel.ts` shim was still forwarding `verifyBvn`/`verifyNin`
+  to `src/lib/korapay.ts` even after Register.tsx's own comments and the
+  Payvessel edge functions assumed it was on Payvessel; that was a leftover
+  bug from an incomplete migration (the Flutter app's `register_screen.dart`
+  never had it — it already called `payvessel-verify-nin` directly). Fixed
+  by rewiring the shim to call the Payvessel functions directly.
+  `src/lib/korapay.ts` and the `korapay-*` edge functions
+  (`korapay-verify-bvn`, `korapay-verify-nin`, `korapay-create-account`,
+  `korapay-payout`, `korapay-webhook`) have been deleted from the website
+  repo — if `supabase functions list` still shows them deployed, drop them
+  with `supabase functions delete <name>`, and remove any `KORAPAY_*`
+  secrets with `supabase secrets unset`.
+- **Payvessel** — now used for BVN/NIN verification at signup (see above),
+  USD virtual card issuing, and extra-document identity verification.
+  eSIM/flight booking are no longer offered in the app (Sept 2026, UI entry
+  points removed) — `payvessel-esim`/`payvessel-flight` are unused now, left
+  deployed but uncalled. `src/lib/payvessel.ts` is a thin re-export shim:
+  `verifyBvn`/`verifyNin` now call the real Payvessel functions directly,
   `listBanks`/`resolveAccount`/`checkTransferStatus`/`payoutToBank` forward
   to Xpress Wallet. Kept as a stable import name across call sites rather
   than renamed every time the underlying provider changes.
 - **Monnify** (Flutter app's `monnify-payment` function) — untouched by any
   of the above; not part of this history.
-
-None of the unused Korapay wallet-funding functions were deleted (delete
-access to this codebase isn't available from this tool) — safe to remove by
-hand, and `supabase functions delete <name>` to drop the deployed copies,
-if you want them fully gone.
 
 ### App Store / Play Store badges
 - Set `VITE_APP_STORE_URL` and `VITE_PLAY_STORE_URL` in `.env` once the

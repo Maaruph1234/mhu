@@ -14,23 +14,37 @@
 // of those two headers.
 //
 // Secrets required (set with `supabase secrets set ...`):
-//   XPRESSWALLET_BASE_URL       (defaults to https://api.xpresswallet.com)
+//   XPRESSWALLET_BASE_URL       (defaults to https://payment.xpress-wallet.com/api/v1)
 //   XPRESSWALLET_EMAIL          merchant dashboard login email
 //   XPRESSWALLET_PASSWORD       merchant dashboard login password
 //   XPRESSWALLET_PRIVATE_KEY    sk_sandbox_xxx / sk_live_xxx, only needed
 //                                for endpoints that send withPrivateKey:true
 //                                below (bank transfers, merchant wallet)
 //
-// NOTE on login body encoding: the public docs' example request body shows
-// email/password as base64 strings (e.g. "password" -> "cGFzc3dvcmQ=").
-// It's unclear whether that's a real API requirement or just Postman's own
-// masking of example credentials in public docs -- the docs don't say
-// either way. This sends plaintext by default. If login fails against the
-// real sandbox with a credentials/format error, flip ENCODE_CREDENTIALS to
-// true below and redeploy.
-const ENCODE_CREDENTIALS = false;
+// CORRECTED Sept 2026: the base URL published on developer.providusbank.com
+// (https://api.xpresswallet.com) turned out to be a dead/parked domain
+// (confirmed by the user -- it's a GoDaddy "domain for sale" page). The
+// real host is https://payment.xpress-wallet.com, confirmed from two
+// independent sources: (1) the user's own Providus/Xpress Wallet docs
+// screenshot showing "Public URL: https://payment.xpress-wallet.com" and
+// "Base URL: https://payment.xpress-wallet.com/api/v1/wallet" for the
+// wallet-creation endpoint, and (2) the actively-maintained third-party
+// Laravel SDK (atanunu/laravel-xpresswallet)'s published config default,
+// 'base_url' => env('XPRESSWALLET_BASE_URL', 'https://payment.xpress-wallet.com').
+// Reconciling both: the shared root is .../api/v1, and each endpoint's path
+// (below) is appended to that -- e.g. POST {base}/wallet is exactly the
+// "https://payment.xpress-wallet.com/api/v1/wallet" the docs screenshot
+// showed for wallet creation.
+//
+// NOTE on login body encoding: the same third-party SDK's docs state it
+// takes raw credentials and "auto base64"-encodes them before the login
+// call, which corroborates the public docs' example body (which showed
+// base64'd email/password). Flipped ENCODE_CREDENTIALS to true on this
+// evidence. If login now fails with a credentials/format error, flip it
+// back to false and redeploy.
+const ENCODE_CREDENTIALS = true;
 
-const BASE_URL = Deno.env.get("XPRESSWALLET_BASE_URL") || "https://api.xpresswallet.com";
+const BASE_URL = Deno.env.get("XPRESSWALLET_BASE_URL") || "https://payment.xpress-wallet.com/api/v1";
 const EMAIL = Deno.env.get("XPRESSWALLET_EMAIL") ?? "";
 const PASSWORD = Deno.env.get("XPRESSWALLET_PASSWORD") ?? "";
 const PRIVATE_KEY = Deno.env.get("XPRESSWALLET_PRIVATE_KEY") ?? "";

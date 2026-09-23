@@ -14,14 +14,37 @@
 //
 // This is the ACTIVE wallet-funding integration (switched back from
 // Korapay, Sept 2026 -- see .env.example and README.md).
+//
+// CORS: called directly from the browser (FundWallet.tsx), so it needs to
+// answer the browser's preflight OPTIONS request and echo CORS headers on
+// every response -- without these, supabase-js's invoke() fails before the
+// function's own logic ever runs, surfaced to the user as a generic
+// "Failed to send a request to the Edge Function".
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { xwLogin, xwAuthHeaders, XW_BASE_URL } from "../_shared/xpresswallet-auth.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function json(body: unknown, init: ResponseInit = {}) {
+  return new Response(JSON.stringify(body), {
+    ...init,
+    headers: { "Content-Type": "application/json", ...corsHeaders, ...(init.headers ?? {}) },
+  });
+}
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   try {
     const authHeader = req.headers.get("Authorization") ?? "";
     const service = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -34,18 +57,15 @@ Deno.serve(async (req) => {
     } = await anonClient.auth.getUser();
 
     if (!user) {
-      return new Response(JSON.stringify({ error: "Not authenticated" }), { status: 401 });
+      return json({ error: "Not authenticated" }, { status: 401 });
     }
 
     const { bvn, dateOfBirth, address } = await req.json();
     if (!bvn || bvn.length !== 11) {
-      return new Response(JSON.stringify({ error: "A valid 11-digit BVN is required" }), { status: 400 });
+      return json({ error: "A valid 11-digit BVN is required" }, { status: 400 });
     }
     if (!dateOfBirth || !address) {
-      return new Response(
-        JSON.stringify({ error: "dateOfBirth and address are required" }),
-        { status: 400 }
-      );
+      return json({ error: "dateOfBirth and address are required" }, { status: 400 });
     }
 
     // Already has an account? Return it instead of creating a duplicate.
@@ -55,7 +75,7 @@ Deno.serve(async (req) => {
       .eq("user_id", user.id)
       .maybeSingle();
     if (existing) {
-      return new Response(JSON.stringify(existing), { headers: { "Content-Type": "application/json" } });
+      return json(existing);
     }
 
     const { data: profile } = await service
@@ -65,11 +85,11 @@ Deno.serve(async (req) => {
       .single();
 
     if (!profile) {
-      return new Response(JSON.stringify({ error: "Profile not found" }), { status: 404 });
+      return json({ error: "Profile not found" }, { status: 404 });
     }
     if (!profile.phone_number || !profile.email) {
-      return new Response(
-        JSON.stringify({ error: "Your profile needs a phone number and email on file before you can fund your wallet" }),
+      return json(
+        { error: "Your profile needs a phone number and email on file before you can fund your wallet" },
         { status: 400 }
       );
     }
@@ -95,8 +115,8 @@ Deno.serve(async (req) => {
     const xwJson = await xwRes.json();
 
     if (!xwRes.ok || !xwJson?.status) {
-      return new Response(
-        JSON.stringify({ error: xwJson?.message ?? "Xpress Wallet could not create your account" }),
+      return json(
+        { error: xwJson?.message ?? "Xpress Wallet could not create your account" },
         { status: 502 }
       );
     }
@@ -106,10 +126,10 @@ Deno.serve(async (req) => {
     // clear error instead of silently creating an account under a
     // mismatched name.
     if (xwJson.customer?.nameMatch === false) {
-      return new Response(
-        JSON.stringify({
+      return json(
+        {
           error: "The name on your profile doesn't match the name on this BVN. Update your display name to match your BVN and try again.",
-        }),
+        },
         { status: 422 }
       );
     }
@@ -132,7 +152,7 @@ Deno.serve(async (req) => {
       .single();
 
     if (insertError) {
-      return new Response(JSON.stringify({ error: insertError.message }), { status: 500 });
+      return json({ error: insertError.message }, { status: 500 });
     }
 
     // Note: bvn/dateOfBirth/address are intentionally NOT persisted anywhere
@@ -141,8 +161,8 @@ Deno.serve(async (req) => {
     // created the account; they're passed through above and kept only on
     // Xpress Wallet's side.
 
-    return new Response(JSON.stringify(inserted), { headers: { "Content-Type": "application/json" } });
+    return json(inserted);
   } catch (err) {
-    return new Response(JSON.stringify({ error: (err as Error).message }), { status: 500 });
+    return json({ error: (err as Error).message }, { status: 500 });
   }
 });
