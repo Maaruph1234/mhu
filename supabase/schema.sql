@@ -336,6 +336,14 @@ begin
     raise exception 'Insufficient balance';
   end if;
 
+  -- KYC tier enforcement (see the "KYC tier system" block below for the
+  -- limits themselves and why these live in shared functions rather than
+  -- inlined here -- xpresswallet-transfer's Send to Bank calls the same
+  -- check_daily_transfer_limit via RPC, so both outbound rails enforce
+  -- identical rules instead of two copies that could drift).
+  perform public.check_daily_transfer_limit(sender_id, p_amount);
+  perform public.check_balance_cap(recipient_id, p_amount);
+
   update public.users set wallet_balance = wallet_balance - p_amount where id = sender_id;
   update public.users set wallet_balance = coalesce(wallet_balance, 0) + p_amount where id = recipient_id;
 
@@ -348,3 +356,166 @@ begin
   return json_build_object('success', true, 'reference', ref);
 end;
 $$ language plpgsql security definer;
+
+-- ============================================================================
+-- KYC tier system (Sept 2026) -- replaces the old Payvessel-based identity
+-- checks entirely (Payvessel has been removed from this app). There is no
+-- longer any identity gate at signup; everyone starts at Tier 1, and tiers
+-- go up from real verification events instead:
+--
+--   Tier 1 (default, everyone starts here): just signed up, no BVN. Low
+--     balance cap, low daily transfer limit, and no bank-transfer funding
+--     at all -- that's enforced structurally, not by a limit check, since
+--     funding via bank transfer requires a real Xpress Wallet account,
+--     which doesn't exist until Tier 2.
+--   Tier 2 (bumped automatically): BVN verified via Xpress Wallet's own
+--     POST /wallet call, as part of creating a real Providus Bank account
+--     (see xpresswallet-create-wallet, which sets kyc_tier = 2 on success).
+--     Moderate balance cap and daily limit, bank-transfer funding unlocked.
+--   Tier 3 (bumped manually): enhanced verification -- a document
+--     (utility bill / license / voter's card / passport) submitted via
+--     tier3-submit-verification and reviewed by hand (there's no automated
+--     document-verification provider anymore; approve/reject a row in
+--     tier3_verifications directly in the Supabase table editor -- the
+--     trigger below bumps kyc_tier to 3 the moment status flips to
+--     'approved'). Highest balance cap and daily limit.
+--
+-- Limits are intentionally round, easy-to-explain defaults -- tune the
+-- numbers in kyc_tier_limits() below any time without touching anything
+-- else, since every enforcement point calls through this one function.
+alter table public.users add column if not exists kyc_tier smallint not null default 1 check (kyc_tier in (1, 2, 3));
+
+create or replace function public.kyc_tier_limits(p_tier smallint)
+returns table(max_balance numeric, daily_limit numeric) as $$
+begin
+  return query select
+    case p_tier when 1 then 50000::numeric when 2 then 500000::numeric when 3 then 5000000::numeric else 50000::numeric end,
+    case p_tier when 1 then 20000::numeric when 2 then 200000::numeric when 3 then 1000000::numeric else 20000::numeric end;
+end;
+$$ language plpgsql immutable;
+
+-- Raises if crediting p_user_id's balance by p_additional_amount would put
+-- them over their tier's max balance. Used for the RECIPIENT side of
+-- wallet-to-wallet transfers above -- deliberately NOT applied to incoming
+-- Xpress Wallet bank deposits (xpresswallet-webhook): that money has
+-- already landed in a real bank account by the time the webhook fires, so
+-- refusing to credit it would just leave it stuck out of sync with
+-- `wallet_balance` instead of actually stopping anything. A balance that
+-- ends up over cap from a real deposit is a signal to review/upgrade that
+-- user's tier, not something to silently drop.
+create or replace function public.check_balance_cap(p_user_id uuid, p_additional_amount numeric)
+returns void as $$
+declare
+  v_tier smallint;
+  v_balance numeric;
+  v_limits record;
+begin
+  select kyc_tier, wallet_balance into v_tier, v_balance from public.users where id = p_user_id;
+  select * into v_limits from public.kyc_tier_limits(coalesce(v_tier, 1));
+
+  if coalesce(v_balance, 0) + p_additional_amount > v_limits.max_balance then
+    raise exception 'This would put the recipient over their account balance limit for their verification tier.';
+  end if;
+end;
+$$ language plpgsql security definer;
+
+-- Raises if p_user_id sending p_amount would exceed their tier's daily
+-- outbound-transfer limit (transfer_out + bank_transfer_out, successful
+-- rows only, since midnight server time). Called from transfer_funds above
+-- (wallet-to-wallet) AND from xpresswallet-transfer's edge function via
+-- `service.rpc('check_daily_transfer_limit', ...)` (Send to Bank) -- one
+-- shared rule for both outbound rails instead of two copies that could
+-- drift out of sync.
+create or replace function public.check_daily_transfer_limit(p_user_id uuid, p_amount numeric)
+returns void as $$
+declare
+  v_tier smallint;
+  v_limits record;
+  v_sent_today numeric;
+begin
+  select kyc_tier into v_tier from public.users where id = p_user_id;
+  select * into v_limits from public.kyc_tier_limits(coalesce(v_tier, 1));
+
+  select coalesce(sum(amount), 0) into v_sent_today
+    from public.transactions
+    where user_id = p_user_id
+      and type in ('transfer_out', 'bank_transfer_out')
+      and status = 'successful'
+      and created_at >= date_trunc('day', now());
+
+  if v_sent_today + p_amount > v_limits.daily_limit then
+    raise exception 'This would exceed your daily transfer limit for your account tier. Verify your account or submit enhanced verification to raise your limit.';
+  end if;
+end;
+$$ language plpgsql security definer;
+
+-- Tier 3 document submissions -- manual review only (see the block comment
+-- above for why). One row per submission; a user can resubmit after a
+-- rejection (old rows are kept for an audit trail, not deleted/overwritten).
+create table if not exists public.tier3_verifications (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  document_type text not null check (document_type in ('utility_bill', 'drivers_license', 'voters_card', 'passport', 'nin_slip')),
+  document_url text not null,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  reviewer_notes text,
+  submitted_at timestamptz not null default now(),
+  reviewed_at timestamptz
+);
+
+alter table public.tier3_verifications enable row level security;
+
+drop policy if exists "Users can view own tier3 submissions" on public.tier3_verifications;
+create policy "Users can view own tier3 submissions" on public.tier3_verifications
+  for select using (auth.uid() = user_id);
+
+-- No insert/update/delete policies on purpose -- inserts happen through the
+-- tier3-submit-verification edge function (service role); reviewing
+-- (approve/reject) happens by editing the row directly in the Supabase
+-- table editor, also service-role level, not exposed to users. If you want
+-- a proper admin review screen later, build it against this table with the
+-- service role key server-side rather than opening these up to RLS.
+
+-- Bumps kyc_tier to 3 automatically the moment a submission's status is
+-- edited to 'approved' in the table editor -- so approving IS the whole
+-- "grant Tier 3" action, no separate manual step to remember.
+create or replace function public.handle_tier3_review() returns trigger as $$
+begin
+  if new.status = 'approved' and old.status is distinct from 'approved' then
+    update public.users set kyc_tier = 3 where id = new.user_id;
+  end if;
+  if new.status in ('approved', 'rejected') and old.reviewed_at is null then
+    new.reviewed_at = now();
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_tier3_verification_reviewed on public.tier3_verifications;
+create trigger on_tier3_verification_reviewed
+  before update on public.tier3_verifications
+  for each row execute function public.handle_tier3_review();
+
+-- Private storage bucket for Tier 3 documents -- users upload directly here
+-- (via the client's own session) under a path prefixed with their own user
+-- id, so the RLS policies below can check ownership from the path alone.
+-- Nothing here is public; the tier3-submit-verification edge function (or a
+-- future admin screen, both service-role) is what actually reads a
+-- document back to review it.
+insert into storage.buckets (id, name, public)
+values ('tier3-documents', 'tier3-documents', false)
+on conflict (id) do nothing;
+
+drop policy if exists "Users can upload own tier3 documents" on storage.objects;
+create policy "Users can upload own tier3 documents" on storage.objects
+  for insert with check (
+    bucket_id = 'tier3-documents'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Users can view own tier3 documents" on storage.objects;
+create policy "Users can view own tier3 documents" on storage.objects
+  for select using (
+    bucket_id = 'tier3-documents'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );

@@ -155,6 +155,17 @@ Deno.serve(async (req) => {
       return json({ error: insertError.message }, { status: 500 });
     }
 
+    // KYC tier bump: a successful BVN-verified wallet account is exactly
+    // what Tier 2 means (see schema.sql's "KYC tier system" block). Best
+    // effort -- if this update fails for some reason, the account itself
+    // was still created successfully, so don't fail the whole request over
+    // it; the tier just stays wherever it was until the next opportunity.
+    await service
+      .from("users")
+      .update({ kyc_tier: 2 })
+      .eq("id", user.id)
+      .lt("kyc_tier", 2);
+
     // Note: bvn/dateOfBirth/address are intentionally NOT persisted anywhere
     // in our own database — the real `users` table has no columns for them,
     // and there's no need to store them ourselves once Xpress Wallet has

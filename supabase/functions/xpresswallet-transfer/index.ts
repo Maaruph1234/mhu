@@ -139,6 +139,18 @@ Deno.serve(async (req) => {
       return json({ error: "Insufficient wallet balance" }, { status: 402 });
     }
 
+    // KYC tier enforcement -- same shared rule transfer_funds (wallet-to-
+    // wallet) uses, see schema.sql's "KYC tier system" block. Checked
+    // before calling Xpress Wallet's real API so a limit-exceeding request
+    // never reaches them at all.
+    const { error: limitError } = await service.rpc("check_daily_transfer_limit", {
+      p_user_id: user.id,
+      p_amount: amount,
+    });
+    if (limitError) {
+      return json({ error: limitError.message }, { status: 400 });
+    }
+
     const { data: xwAccount } = await service
       .from("xpresswallet_accounts")
       .select("xw_customer_id")

@@ -18,6 +18,25 @@ export interface Profile {
   is_online?: boolean | null;
   business_name?: string | null;
   created_at: string;
+  // KYC tier (Sept 2026, see supabase/schema.sql's "KYC tier system"
+  // block): 1 = just signed up, 2 = BVN verified via Xpress Wallet,
+  // 3 = enhanced verification, manually reviewed. Defaults to 1 in the DB,
+  // so this is realistically always a number once loaded -- optional only
+  // because it's absent on very old cached/mocked Profile objects.
+  kyc_tier?: 1 | 2 | 3;
+}
+
+export type Tier3DocumentType = "utility_bill" | "drivers_license" | "voters_card" | "passport" | "nin_slip";
+
+export interface Tier3Verification {
+  id: string;
+  user_id: string;
+  document_type: Tier3DocumentType;
+  document_url: string;
+  status: "pending" | "approved" | "rejected";
+  reviewer_notes: string | null;
+  submitted_at: string;
+  reviewed_at: string | null;
 }
 
 // ACTIVE -- Xpress Wallet (Providus Bank) is the current wallet-funding
