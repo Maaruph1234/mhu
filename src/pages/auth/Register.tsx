@@ -1,24 +1,19 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Mail, Lock, User as UserIcon, Phone, Gift, ShieldCheck } from "lucide-react";
+import { Mail, Lock, User as UserIcon, Phone, Gift } from "lucide-react";
 import { AuthLayout } from "../../components/layout/AuthLayout";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { useAuth } from "../../context/AuthContext";
-import * as payvessel from "../../lib/payvessel";
 
 export default function Register() {
   const navigate = useNavigate();
   const { signUp, sendSignupOtp } = useAuth();
   const [form, setForm] = useState({
     firstName: "",
-    middleName: "",
     lastName: "",
-    gender: "" as "" | "MALE" | "FEMALE",
-    birthday: "",
     email: "",
     phone: "",
-    nin: "",
     password: "",
     referredBy: "",
   });
@@ -34,30 +29,15 @@ export default function Register() {
     setError(null);
     setLoading(true);
     try {
-      // Identity check happens BEFORE any account is created: the name,
-      // gender, date of birth, and phone number entered here must match
-      // what Payvessel's Basic NIN Verification says for that NIN, or
-      // registration is declined outright. See
-      // supabase/functions/payvessel-verify-nin for the actual matching
-      // logic. Switched from BVN to NIN (Sept 2026) after BVN
-      // verification kept returning genuine "name doesn't match" results.
-      if (!form.gender) throw new Error("Select a gender");
-      const { verified, reason, phoneWarning } = await payvessel.verifyNin({
-        nin: form.nin,
-        firstName: form.firstName,
-        middleName: form.middleName,
-        lastName: form.lastName,
-        gender: form.gender,
-        birthday: form.birthday,
-        phone: form.phone,
-      });
-      if (!verified) {
-        throw new Error(reason || "We couldn't verify those details against your NIN. Please check and try again.");
-      }
-
-      // Basic NIN Verification only returns match verdicts, not the
-      // record's own name/phone (unlike Enhanced) -- since it's already
-      // confirmed to match, use exactly what was typed.
+      // No third-party identity check at signup (Sept 2026): this used to
+      // gate registration on a Payvessel NIN lookup before an account could
+      // even be created. Removed along with the rest of Payvessel -- the
+      // real identity check now happens once, later, when someone verifies
+      // their account to fund their wallet: Xpress Wallet's own POST /wallet
+      // call validates their BVN against the BVN registry as part of
+      // creating their dedicated Providus Bank account (see
+      // xpresswallet-create-wallet and the "Verify your account" banner on
+      // the dashboard). Signup itself is just account creation now.
       const fullName = `${form.firstName} ${form.lastName}`.trim();
       const verifiedPhone = form.phone;
       const { error: signUpError, needsVerification, userId } = await signUp({
@@ -66,9 +46,6 @@ export default function Register() {
         phone: verifiedPhone,
         password: form.password,
         referredBy: form.referredBy,
-        // Already verified against Payvessel above -- stored on the
-        // profile so Fund Wallet can reuse it instead of asking again.
-        nin: form.nin,
       });
       if (signUpError) throw new Error(signUpError);
 
@@ -97,7 +74,6 @@ export default function Register() {
           phone: verifiedPhone,
           password: form.password,
           userId,
-          notice: phoneWarning || undefined,
         },
       });
     } catch (err) {
@@ -129,35 +105,6 @@ export default function Register() {
           />
         </div>
         <Input
-          label="Middle name (optional)"
-          placeholder="Leave blank if none"
-          icon={<UserIcon size={16} />}
-          value={form.middleName}
-          onChange={update("middleName")}
-        />
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-600">Gender</label>
-            <select
-              value={form.gender}
-              onChange={update("gender")}
-              required
-              className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20"
-            >
-              <option value="">Select</option>
-              <option value="MALE">Male</option>
-              <option value="FEMALE">Female</option>
-            </select>
-          </div>
-          <Input
-            label="Date of birth"
-            type="date"
-            value={form.birthday}
-            onChange={update("birthday")}
-            required
-          />
-        </div>
-        <Input
           label="Email"
           type="email"
           placeholder="you@example.com"
@@ -175,19 +122,6 @@ export default function Register() {
           onChange={update("phone")}
           required
         />
-        <Input
-          label="NIN"
-          placeholder="11-digit NIN"
-          icon={<ShieldCheck size={16} />}
-          value={form.nin}
-          onChange={update("nin")}
-          maxLength={11}
-          required
-        />
-        <p className="-mt-2 text-xs text-slate-400">
-          Your name, gender, date of birth, and phone number must match your NIN record — this is how we
-          confirm it's really you.
-        </p>
         <Input
           label="Password"
           type="password"

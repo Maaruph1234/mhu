@@ -14,7 +14,6 @@ import ResetPassword from "./pages/auth/ResetPassword";
 
 import Dashboard from "./pages/dashboard/Dashboard";
 import FundWallet from "./pages/dashboard/FundWallet";
-import VirtualCard from "./pages/dashboard/VirtualCard";
 import Transfer from "./pages/dashboard/Transfer";
 import Airtime from "./pages/dashboard/Airtime";
 import Data from "./pages/dashboard/Data";
@@ -50,7 +49,6 @@ function App() {
           >
             <Route index element={<Dashboard />} />
             <Route path="fund" element={<FundWallet />} />
-            <Route path="cards" element={<VirtualCard />} />
             <Route path="transfer" element={<Transfer />} />
             <Route path="airtime" element={<Airtime />} />
             <Route path="data" element={<Data />} />
