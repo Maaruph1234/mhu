@@ -319,15 +319,6 @@ export interface Network {
   logo?: string;
 }
 
-export interface DataPlan {
-  id: string;
-  network: string;
-  name: string;
-  size: string;
-  validity: string;
-  price: number;
-}
-
 export interface TvProvider {
   id: string;
   name: string;

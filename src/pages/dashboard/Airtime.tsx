@@ -5,7 +5,7 @@ import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { NetworkPicker } from "../../components/ui/NetworkPicker";
 import { NETWORKS } from "../../data/reference";
-import { purchase } from "../../lib/vtpass";
+import { purchase } from "../../lib/hadjibs";
 import { useWallet } from "../../context/WalletContext";
 
 const QUICK_AMOUNTS = [100, 200, 500, 1000, 2000, 5000];

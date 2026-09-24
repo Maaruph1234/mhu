@@ -15,6 +15,7 @@ export default function Register() {
     email: "",
     phone: "",
     password: "",
+    confirmPassword: "",
     referredBy: "",
   });
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +28,14 @@ export default function Register() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (form.password.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
+    if (form.password !== form.confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
     setLoading(true);
     try {
       // No third-party identity check at signup (Sept 2026): this used to
@@ -130,6 +139,15 @@ export default function Register() {
           value={form.password}
           onChange={update("password")}
           minLength={8}
+          required
+        />
+        <Input
+          label="Confirm password"
+          type="password"
+          placeholder="Re-enter your password"
+          icon={<Lock size={16} />}
+          value={form.confirmPassword}
+          onChange={update("confirmPassword")}
           required
         />
         <Input

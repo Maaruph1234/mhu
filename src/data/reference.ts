@@ -1,26 +1,17 @@
-import type { Network, DataPlan, TvProvider, TvPlan, Disco, ExamBody } from "../types";
+import type { Network, TvProvider, TvPlan, Disco, ExamBody } from "../types";
 
 // Static reference data (not user/transaction data). Networks, discos and exam
-// bodies rarely change, so these are safe to hardcode. Live prices for data
-// bundles / TV plans should ultimately come from VTpass's "Get Variation
-// Codes" endpoint (see src/lib/vtpass.ts) rather than this static list — the
-// entries below are placeholders to build the UI against.
+// bodies rarely change, so these are safe to hardcode. Live TV bouquet prices
+// come from VTpass's "Get Variation Codes" endpoint (see src/lib/vtpass.ts);
+// data plan prices come from Hadjibs Data's static catalog (see
+// src/data/hadjibsDataPlans.ts) since Hadjibs has no equivalent live
+// endpoint. TV_PLANS below are placeholders to build the UI against.
 
 export const NETWORKS: Network[] = [
   { id: "mtn", name: "MTN", color: "#FFCB05", logo: "/networks/mtn.png" },
   { id: "airtel", name: "Airtel", color: "#FF0000", logo: "/networks/airtel.png" },
   { id: "glo", name: "Glo", color: "#00A651", logo: "/networks/glo.png" },
   { id: "9mobile", name: "9mobile", color: "#00A99D", logo: "/networks/9mobile.png" },
-];
-
-export const DATA_PLANS: DataPlan[] = [
-  { id: "mtn-1gb-30", network: "mtn", name: "1GB - 30 Days", size: "1GB", validity: "30 days", price: 800 },
-  { id: "mtn-2gb-30", network: "mtn", name: "2GB - 30 Days", size: "2GB", validity: "30 days", price: 1500 },
-  { id: "mtn-5gb-30", network: "mtn", name: "5GB - 30 Days", size: "5GB", validity: "30 days", price: 3500 },
-  { id: "airtel-1gb-30", network: "airtel", name: "1GB - 30 Days", size: "1GB", validity: "30 days", price: 750 },
-  { id: "airtel-2gb-30", network: "airtel", name: "2GB - 30 Days", size: "2GB", validity: "30 days", price: 1450 },
-  { id: "glo-1.5gb-30", network: "glo", name: "1.5GB - 30 Days", size: "1.5GB", validity: "30 days", price: 700 },
-  { id: "9mobile-1gb-30", network: "9mobile", name: "1GB - 30 Days", size: "1GB", validity: "30 days", price: 800 },
 ];
 
 export const TV_PROVIDERS: TvProvider[] = [

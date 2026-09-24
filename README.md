@@ -5,16 +5,15 @@ airtime, data, TV subscriptions, electricity bills, exam pins, instant
 peer-to-peer transfers, USD virtual cards, extra ID verification, eSIM data
 packages, and flight booking. Visual style is a light fintech theme.
 Backend: Supabase (auth, database, edge functions, and built-in email OTP
-for signup verification), VTpass (airtime/data/TV/electricity/exam-pin
-fulfillment), Payvessel (wallet funding, bank payouts, BVN/identity
-verification, USD virtual card issuing, eSIM, and flight booking — Payvessel
-replaced Korapay and Monnify as of this revision; see the "Payvessel"
-sections below for the full API surface now in use).
+for signup verification), Hadjibs Data (airtime/data fulfillment, as of Oct
+2026), VTpass (TV/electricity/exam-pin fulfillment — no longer airtime/data,
+see the "Hadjibs Data" and "VTpass" sections below), Xpress Wallet (wallet
+funding + bank payouts via a real Providus Bank account per user).
 
 This app shares ONE Supabase project with a companion Flutter mobile app
-("MHU Super App"). Every Payvessel edge function listed below is deployed
-ONCE and used by both apps — the Flutter app's own README doesn't repeat
-these deployment steps, it just points back here.
+("MHU Super App"). Every edge function listed below is deployed ONCE and
+used by both apps — the Flutter app's own README doesn't repeat these
+deployment steps, it just points back here.
 
 This is a working scaffold with real integration code, not a finished
 production app — the sections below list exactly what to fill in before it
@@ -52,10 +51,11 @@ address are passed through to Korapay without being stored locally).
    `VITE_SUPABASE_ANON_KEY`.
 4. Deploy the edge functions in `supabase/functions/`:
    ```bash
-   supabase functions deploy provibill-purchase
+   supabase functions deploy hadjibs-purchase
+   supabase functions deploy vtpass-purchase
    supabase functions deploy smsala-send-otp
    ```
-   (plus the two Korapay functions listed further down.)
+   (plus the Xpress Wallet functions listed further down.)
 
 ### Signup verification (email OTP via Supabase Auth — not Smsala)
 Account verification after signup now uses Supabase Auth's own built-in
@@ -88,9 +88,41 @@ later, otherwise they're safe to delete.
   shape (`api_id`, `sender_id`, `message`, `numbers`) — confirm the exact
   field names against Smsala's current API docs/dashboard and adjust.
 
-### VTpass (airtime, data, TV, electricity, exam pins)
-VTpass (see vtpass.com/documentation) is the live bill payment/VTU
-fulfillment provider. Every endpoint/field used in
+### Hadjibs Data (airtime, data)
+Hadjibs Data (hadjibsdata.com.ng) is the mobile-network subscriber provider
+as of Oct 2026, replacing VTpass for airtime + data specifically. Every
+endpoint/field used in `supabase/functions/hadjibs-purchase/index.ts` is
+confirmed directly against the account's own logged-in API docs page
+(Profile > API Access > API Docs) — a short list: `GET /api/user` (balance),
+`POST /api/data`, `POST /api/airtime`.
+
+- Auth is a single API key — no secret/public key split. Copy it from
+  Profile > API Access on your Hadjibs account, then set as a Supabase
+  function secret:
+  ```bash
+  supabase secrets set HADJIBS_API_KEY=xxx
+  ```
+- Hadjibs has no live "list data plans" endpoint, unlike VTpass — the full
+  data-plan catalog (network, numeric Plan Id, name, price) is hand-
+  transcribed from the account's own Pricing page into
+  `src/data/hadjibsDataPlans.ts` (and mirrored in the Flutter app's
+  `lib/shared/data/hadjibs_data_plans.dart`). Re-scrape that page
+  periodically — Hadjibs adds/removes/reprices plans with no notice.
+- No 9mobile data bundles are offered yet (Hadjibs' Pricing page has no
+  9MOBILE rows in its Data Plan table) — 9mobile airtime still works.
+- No requery/status-check endpoint exists — once `/api/data` or
+  `/api/airtime` responds, that's the only signal available; see the
+  header comment in `hadjibs-purchase/index.ts` for how an ambiguous
+  network timeout is handled.
+- The doc's own example (`plan=500MB`) doesn't match the real numeric Plan
+  Ids in the Pricing table (e.g. `217`) — this codebase uses the numeric
+  ids, which is what a reseller API actually expects, but re-confirm
+  against a real test purchase before relying on it live.
+
+### VTpass (TV, electricity, exam pins)
+VTpass (see vtpass.com/documentation) is the fulfillment provider for the
+three products Hadjibs' public API doesn't offer — no longer airtime/data
+(see "Hadjibs Data" above). Every endpoint/field used in
 `supabase/functions/vtpass-purchase/index.ts` is confirmed directly against
 VTpass's own docs (auth headers, `/pay`, `/requery`, `/merchant-verify`,
 `/service-variations`), not guessed.
@@ -104,18 +136,16 @@ VTpass's own docs (auth headers, `/pay`, `/requery`, `/merchant-verify`,
   Switch `VTPASS_BASE_URL` to `https://vtpass.com/api` once VTpass
   provisions your account for the live environment (request this from
   their support after sandbox testing is complete).
-- **Sandbox test values** (only work against the sandbox base URL): airtime
-  and data purchases succeed when `phone` is `08011111111` (any other
-  number simulates a failure); electricity and TV purchases succeed when
-  the meter/smartcard number is `1111111111111` (prepaid) or
-  `1010101010101` (postpaid).
+- **Sandbox test values** (only work against the sandbox base URL):
+  electricity and TV purchases succeed when the meter/smartcard number is
+  `1111111111111` (prepaid) or `1010101010101` (postpaid).
 - Service IDs are hardcoded in `vtpass-purchase/index.ts`
-  (`AIRTIME_IDS`/`DATA_IDS`/`TV_IDS`/`ELECTRICITY_IDS`/`EXAM_IDS`) rather
-  than looked up live, since VTpass's service IDs are stable and documented
-  — confirmed against VTpass's own per-product doc pages, not guessed.
-  Note electricity service IDs follow a `{cityname}-electric` pattern (e.g.
-  `portharcourt-electric`, not `phed-electric`) — don't assume the disco
-  abbreviation matches the service ID.
+  (`TV_IDS`/`ELECTRICITY_IDS`/`EXAM_IDS`) rather than looked up live, since
+  VTpass's service IDs are stable and documented — confirmed against
+  VTpass's own per-product doc pages, not guessed. Note electricity service
+  IDs follow a `{cityname}-electric` pattern (e.g. `portharcourt-electric`,
+  not `phed-electric`) — don't assume the disco abbreviation matches the
+  service ID.
 - **NECO is not supported.** VTpass only offers WAEC (Registration + Result
   Checker) and JAMB pins, no NECO result-checker product. The exam-pin UI
   still lists NECO as an option (see `src/data/reference.ts`) — purchases
@@ -123,21 +153,21 @@ VTpass's own docs (auth headers, `/pay`, `/requery`, `/merchant-verify`,
   product. Remove it from the UI, or find an alternate provider for NECO
   specifically, before going live.
 - No IP whitelisting or proxy setup required — VTpass is a standard HTTPS
-  REST API reachable from anywhere, unlike Provibill (see below).
-- The data plans, TV bouquets and prices in `src/data/reference.ts` are
-  still placeholders — replace with real values from VTpass's
+  REST API reachable from anywhere.
+- The TV bouquets and prices in `src/data/reference.ts` are still
+  placeholders — replace with real values from VTpass's
   `/service-variations?serviceID=X` endpoint for accurate pricing.
 
-### Provibill (not currently used — left in place, unused)
+### Provibill (REMOVED)
 Provibill was the original bill payment provider but was abandoned after
 its bank-provided sandbox server was never reachable, despite extensive
 troubleshooting (confirmed our IP, proxy, and port all worked correctly
 against other servers — the block was on their firewall/server, never
-resolved). `src/lib/provibill.ts` and
-`supabase/functions/provibill-purchase/` are left in the codebase, unused,
-in case that connectivity issue gets resolved later and it's worth
-revisiting. VTpass replaces it as the active integration; none of the
-5 VTU pages import from `lib/provibill` anymore.
+resolved). It was fully dead/unused since VTpass took over, and has now
+been removed — `src/lib/provibill.ts` and
+`supabase/functions/provibill-purchase/` are stub files noting the removal
+(the sandbox this was built in couldn't delete files in this mounted
+folder; delete them by hand).
 
 ### Payvessel — wallet funding, payouts, BVN check, virtual cards, identity verification, eSIM, flights
 Payvessel (docs.payvessel.com) is now the provider for everything that used
@@ -281,15 +311,21 @@ This has switched providers more than once. As of Sept 2026:
   repo — if `supabase functions list` still shows them deployed, drop them
   with `supabase functions delete <name>`, and remove any `KORAPAY_*`
   secrets with `supabase secrets unset`.
-- **Payvessel** — now used for BVN/NIN verification at signup (see above),
-  USD virtual card issuing, and extra-document identity verification.
-  eSIM/flight booking are no longer offered in the app (Sept 2026, UI entry
-  points removed) — `payvessel-esim`/`payvessel-flight` are unused now, left
-  deployed but uncalled. `src/lib/payvessel.ts` is a thin re-export shim:
-  `verifyBvn`/`verifyNin` now call the real Payvessel functions directly,
-  `listBanks`/`resolveAccount`/`checkTransferStatus`/`payoutToBank` forward
-  to Xpress Wallet. Kept as a stable import name across call sites rather
-  than renamed every time the underlying provider changes.
+- **Payvessel — REMOVED (Sept 2026).** Was used for the signup NIN check,
+  USD virtual card issuing, and extra-document identity verification; the
+  user explicitly asked for Payvessel and Korapay gone entirely, Xpress
+  Wallet only. Signup no longer runs any third-party identity check at all
+  — the real identity check now happens once, later, when Xpress Wallet's
+  own `POST /wallet` call validates a user's BVN as part of creating their
+  dedicated Providus Bank account. Virtual Cards and extra-document
+  identity verification are no longer offered in the app (UI entry points
+  removed). `src/lib/payvessel.ts` and the `payvessel-*` edge functions are
+  stub files noting the removal (the sandbox this was built in couldn't
+  delete files in this mounted folder; delete them by hand). A Tier 1/2/3
+  KYC system (`kyc_tier` on `users`, `tier3_verifications` table, manual
+  review) replaced Payvessel's old automated document checks for anyone
+  who needs higher limits — see `supabase/schema.sql`'s "KYC tier system"
+  block and `src/components/dashboard/TierCard.tsx`.
 - **Monnify** (Flutter app's `monnify-payment` function) — untouched by any
   of the above; not part of this history.
 
@@ -302,36 +338,36 @@ This has switched providers more than once. As of Sept 2026:
 ```
 src/
   components/ui/          Buttons, cards, inputs, wallet card, store badges, etc.
-  components/dashboard/   IdentityVerificationCard (Profile page section)
+  components/dashboard/   TierCard (KYC tier + Tier 3 submission, Profile page section)
   components/layout/      Marketing nav/footer, dashboard sidebar, auth layout
   context/                 AuthContext (Supabase auth), WalletContext (balance + transactions)
-  lib/                     supabaseClient, smsala.ts, vtpass.ts, provibill.ts (unused), korapay.ts
-                           (BVN/NIN verification active; wallet-funding/payout parts unused),
-                           payvessel.ts (shim -- see provider-history section above), xpressWallet.ts
-                           (ACTIVE for wallet funding + bank payouts), virtualCards.ts,
-                           identityVerification.ts, esim.ts, flights.ts, format.ts
+  lib/                     supabaseClient, smsala.ts, hadjibs.ts (ACTIVE -- airtime/data),
+                           vtpass.ts (ACTIVE -- TV/electricity/exam-pins), provibill.ts (removed,
+                           stub), xpressWallet.ts (ACTIVE -- wallet funding + bank payouts),
+                           tier3.ts (Tier 3 manual-review submission), format.ts
   data/reference.ts        Static network/TV/disco/exam-body reference data (placeholders — see above)
+  data/hadjibsDataPlans.ts Hadjibs Data's real data-plan catalog (hand-transcribed, see above)
+  lib/dataPlanCategories.ts Buckets data-plan/TV-bouquet variations into Daily/Weekly/Monthly/etc.
   pages/marketing/         Landing page
-  pages/auth/              Login, Register, OTP verification, Forgot password
+  pages/auth/              Login, Register, OTP verification, Forgot/Reset password
   pages/dashboard/         Overview, Fund, Transfer, Airtime, Data, TV, Electricity, Exam Pins,
-                           VirtualCard, Esim, FlightBooking, Transactions, Referrals, Profile
+                           Transactions, Referrals, Profile
 supabase/
-  schema.sql               Tables, RLS policies, transfer_funds RPC
-  functions/                Edge functions that hold the real VTpass/Smsala/Payvessel/Korapay/
-                           Xpress Wallet secret keys (plus unused Provibill ones, and the Korapay
-                           wallet-funding/payout functions Xpress Wallet replaced)
+  schema.sql               Tables, RLS policies, transfer_funds RPC, KYC tier system
+  functions/                Edge functions that hold the real Hadjibs/VTpass/Smsala/Xpress Wallet
+                           secret keys (plus stub Provibill/Payvessel/Korapay ones, all removed --
+                           see the provider-history sections above)
 ```
 
-## 4. Why VTpass/Payvessel/Smsala calls go through Supabase Edge Functions
+## 4. Why Hadjibs/VTpass/Smsala calls go through Supabase Edge Functions
 
-VTpass, Payvessel, and Smsala all require secret credentials. Secrets must
-never ship in frontend JavaScript (anyone can open dev tools and read
-them), so `src/lib/vtpass.ts`, `src/lib/payvessel.ts` (and its
-`virtualCards.ts`/`identityVerification.ts`/`esim.ts`/`flights.ts`
-siblings), and `src/lib/smsala.ts` never call those APIs directly — they
-call a Supabase Edge Function (`supabase.functions.invoke(...)`), and the
-edge function (which runs server-side, holding the real secrets) makes the
-actual VTpass/Payvessel/Smsala request.
+Hadjibs Data, VTpass, and Smsala all require secret credentials. Secrets
+must never ship in frontend JavaScript (anyone can open dev tools and read
+them), so `src/lib/hadjibs.ts`, `src/lib/vtpass.ts`, and `src/lib/smsala.ts`
+never call those APIs directly — they call a Supabase Edge Function
+(`supabase.functions.invoke(...)`), and the edge function (which runs
+server-side, holding the real secrets) makes the actual Hadjibs/VTpass/
+Smsala request.
 
 ## 5. Build
 

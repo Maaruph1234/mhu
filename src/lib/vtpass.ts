@@ -1,7 +1,7 @@
 import { supabase, extractFunctionErrorMessage } from "./supabaseClient";
 import { isDemoMode } from "./demoMode";
 import { demoStore } from "./demoStore";
-import { TV_PLANS, DATA_PLANS } from "../data/reference";
+import { TV_PLANS } from "../data/reference";
 import type { TransactionType } from "../types";
 
 /**
@@ -14,25 +14,25 @@ import type { TransactionType } from "../types";
  * credentials server-side is required — they must never ship in frontend
  * JS.
  *
- * VTpass replaces Provibill as the bill payment/VTU fulfillment provider
- * (Provibill's sandbox was never reachable due to an unresolved bank-side
- * firewall/whitelisting issue — see README for details. Provibill's files
- * are left in place, unused, in case that gets resolved later).
+ * As of Oct 2026, VTpass only handles Cable TV, Electricity, and Exam Pins
+ * here -- Airtime and Data moved to Hadjibs Data (see src/lib/hadjibs.ts),
+ * which is now the mobile-network subscriber provider for those two
+ * products. Kept for the three products Hadjibs' public API doesn't offer.
  *
  * In demo mode (no Supabase configured yet), every call below short-
  * circuits into a simulated response and updates the local demo
  * wallet/transactions instead — see src/lib/demoStore.ts.
  */
 
-export type VtpassService = "airtime" | "data" | "tv-subscription" | "electricity" | "exam-pin";
+export type VtpassService = "tv-subscription" | "electricity" | "exam-pin";
 
 export interface VtpassPurchasePayload {
   service: VtpassService;
-  serviceId: string; // e.g. "mtn", "dstv", "ikeja-electric", "waec"
-  variationCode?: string; // data plan / tv bouquet code, when applicable
-  variationLabel?: string; // human-readable plan/bouquet name (unused by VTpass, kept so callers don't need edits)
-  amount?: number; // required for airtime + electricity (customer-entered amount)
-  phone?: string; // airtime / data recipient, and required by VTpass on every purchase
+  serviceId: string; // e.g. "dstv", "ikeja-electric", "waec"
+  variationCode?: string; // tv bouquet code, when applicable
+  variationLabel?: string; // human-readable bouquet name (unused by VTpass, kept so callers don't need edits)
+  amount?: number; // required for electricity (customer-entered amount)
+  phone?: string; // required by VTpass on every purchase, even when not the actual recipient
   smartcardNumber?: string; // tv subscription
   meterNumber?: string; // electricity
   meterType?: "prepaid" | "postpaid";
@@ -104,10 +104,12 @@ export async function verifySmartcard(provider: string, smartcardNumber: string)
 }
 
 /**
- * Real VTpass variation codes (data plans / TV bouquets) for a given
- * network/provider -- fetched live via GET /service-variations rather than
- * the hardcoded placeholder ids in src/data/reference.ts (those were only
- * ever meant to build the UI against; VTpass rejects them as invalid).
+ * Real VTpass TV bouquet variation codes for a given provider -- fetched
+ * live via GET /service-variations rather than the hardcoded placeholder
+ * ids in src/data/reference.ts (those were only ever meant to build the UI
+ * against; VTpass rejects them as invalid). Data plans used to go through
+ * here too before Data.tsx moved to Hadjibs' static catalog (see
+ * src/lib/hadjibs.ts) -- only tv-subscription is left.
  */
 export interface VtpassVariation {
   code: string;
@@ -116,21 +118,14 @@ export interface VtpassVariation {
 }
 
 export async function getVariations(
-  service: "data" | "tv-subscription",
+  service: "tv-subscription",
   serviceId: string
 ): Promise<VtpassVariation[]> {
   if (isDemoMode) {
     await delay(400);
-    if (service === "tv-subscription") {
-      return TV_PLANS.filter((p) => p.provider === serviceId).map((p) => ({
-        code: p.id,
-        name: p.name,
-        price: p.price,
-      }));
-    }
-    return DATA_PLANS.filter((p) => p.network === serviceId).map((p) => ({
+    return TV_PLANS.filter((p) => p.provider === serviceId).map((p) => ({
       code: p.id,
-      name: `${p.size} - ${p.validity}`,
+      name: p.name,
       price: p.price,
     }));
   }

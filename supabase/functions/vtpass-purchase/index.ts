@@ -5,6 +5,12 @@
 //   VTPASS_BASE_URL=https://sandbox.vtpass.com/api  (switch to
 //   https://vtpass.com/api once provisioned for live)
 //
+// As of Oct 2026, this function only handles Cable TV, Electricity, and
+// Exam Pins -- Airtime and Data moved to Hadjibs Data (see
+// hadjibs-purchase), which is now the mobile-network subscriber provider
+// for those two products. Kept here for the three products Hadjibs'
+// public API doesn't offer.
+//
 // Every endpoint/field/response shape here is confirmed directly against
 // VTpass's own documentation (vtpass.com/documentation), not guessed:
 //   - Auth: GET requests use api-key + public-key headers; POST requests
@@ -16,9 +22,6 @@
 //   - POST /requery {request_id}  -> same shape as /pay
 //
 // SANDBOX TEST VALUES (only work against the sandbox base URL):
-//   Airtime/data success: phone 08011111111 (any other number simulates a
-//   failure; specific numbers simulate pending/timeout/no-response — see
-//   VTpass docs if you need those scenarios).
 //   Electricity success: meterNumber 1111111111111 (prepaid) or
 //   1010101010101 (postpaid); any other number simulates a failed
 //   verification/purchase.
@@ -133,20 +136,6 @@ function generateRequestId(): string {
 // benin-electric, enugu-electric, jos-electric, kaduna-electric,
 // yola-electric — each verified against its own vtpass.com/documentation
 // page rather than assumed from the pattern alone.
-const AIRTIME_IDS: Record<string, string> = {
-  mtn: "mtn",
-  airtel: "airtel",
-  glo: "glo",
-  "9mobile": "etisalat",
-};
-
-const DATA_IDS: Record<string, string> = {
-  mtn: "mtn-data",
-  airtel: "airtel-data",
-  glo: "glo-data",
-  "9mobile": "etisalat-data",
-};
-
 const TV_IDS: Record<string, string> = {
   dstv: "dstv",
   gotv: "gotv",
@@ -201,8 +190,6 @@ Deno.serve(async (req) => {
     const service = body.service as string;
 
     const resolveServiceId = (): string => {
-      if (service === "airtime") return AIRTIME_IDS[body.serviceId];
-      if (service === "data") return DATA_IDS[body.serviceId];
       if (service === "tv-subscription") return TV_IDS[body.serviceId];
       if (service === "electricity") return ELECTRICITY_IDS[body.serviceId];
       if (service === "exam-pin") return EXAM_IDS[body.serviceId];
@@ -290,10 +277,7 @@ Deno.serve(async (req) => {
       phone: body.phone ?? "08011111111",
     };
 
-    if (service === "data") {
-      payBody.billersCode = body.phone;
-      payBody.variation_code = body.variationCode;
-    } else if (service === "tv-subscription") {
+    if (service === "tv-subscription") {
       payBody.billersCode = body.smartcardNumber;
       payBody.variation_code = body.variationCode;
       // "renew" is only valid when the customer is renewing their EXISTING
@@ -314,7 +298,6 @@ Deno.serve(async (req) => {
       payBody.variation_code = EXAM_VARIATION_CODES[body.serviceId];
       payBody.quantity = body.quantity ?? 1;
     }
-    // airtime needs nothing beyond serviceID/amount/phone, already set above.
 
     // A `notify_on_transaction` trigger on the `transactions` table builds a
     // notification body as `subtitle || ' - ' || sign || amount` -- if
@@ -326,9 +309,7 @@ Deno.serve(async (req) => {
         ? `Meter ${body.meterNumber}`
         : service === "tv-subscription"
         ? `Smartcard ${body.smartcardNumber}`
-        : service === "exam-pin"
-        ? `${body.quantity ?? 1} pin(s)`
-        : `To ${body.phone ?? "recipient"}`;
+        : `${body.quantity ?? 1} pin(s)`;
 
     // Logged so the raw VTpass response is retrievable from Supabase's
     // function logs -- needed to see the REAL failure reason when it

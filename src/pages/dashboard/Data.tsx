@@ -6,8 +6,8 @@ import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { NetworkPicker } from "../../components/ui/NetworkPicker";
 import { NETWORKS } from "../../data/reference";
-import { purchase, getVariations } from "../../lib/vtpass";
-import type { VtpassVariation } from "../../lib/vtpass";
+import { purchase, getDataPlans } from "../../lib/hadjibs";
+import type { HadjibsVariation } from "../../lib/hadjibs";
 import { DATA_CATEGORY_ORDER, groupByCategory, type DataPlanCategory } from "../../lib/dataPlanCategories";
 import { useWallet } from "../../context/WalletContext";
 import { formatCurrency } from "../../lib/format";
@@ -15,7 +15,7 @@ import { formatCurrency } from "../../lib/format";
 export default function Data() {
   const { refresh } = useWallet();
   const [network, setNetwork] = useState(NETWORKS[0].id);
-  const [plans, setPlans] = useState<VtpassVariation[]>([]);
+  const [plans, setPlans] = useState<HadjibsVariation[]>([]);
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [plansError, setPlansError] = useState<string | null>(null);
   const [planId, setPlanId] = useState<string | null>(null);
@@ -25,16 +25,22 @@ export default function Data() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Real data-plan codes/prices straight from VTpass -- not the static
-  // placeholder list, which uses made-up codes VTpass would reject.
+  // Hadjibs Data has no live "list variations" endpoint the way VTpass did
+  // -- getDataPlans just filters the static catalog in
+  // src/data/hadjibsDataPlans.ts. Kept as an effect (rather than a plain
+  // useMemo) so the loading/error UI below still behaves the same way it
+  // did against the old live fetch, and so a 9mobile pick (no plans yet --
+  // see hadjibsDataPlans.ts) surfaces a clear message instead of an empty grid.
   useEffect(() => {
     setLoadingPlans(true);
     setPlansError(null);
     setPlanId(null);
-    getVariations("data", network)
-      .then(setPlans)
-      .catch((err) => setPlansError((err as Error).message))
-      .finally(() => setLoadingPlans(false));
+    const list = getDataPlans(network);
+    if (list.length === 0) {
+      setPlansError(`No data plans available for ${network} yet`);
+    }
+    setPlans(list);
+    setLoadingPlans(false);
   }, [network]);
 
   // Sorted into billing-cycle/purpose buckets (Daily, Social, Broadband,
