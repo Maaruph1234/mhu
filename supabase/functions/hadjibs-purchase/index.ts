@@ -16,13 +16,22 @@
 //   POST /api/data    {apikey, network, plan, phone}           -> buy data
 //   POST /api/airtime {apikey, network, amount, phone}         -> buy airtime
 //
-// Auth is a single apikey param -- no secret/public key split like VTpass,
-// and no signature/HMAC. Confirmed sent as a normal form-encoded POST body
-// (the docs' example request reads like a query string, not JSON, and this
-// class of Nigerian VTU reseller backend is almost always plain PHP $_POST)
-// -- verify against a real test purchase before relying on this in
-// production; if Hadjibs actually expects JSON, switch postForm() below to
-// send `Content-Type: application/json` + `JSON.stringify(params)` instead.
+// Auth is a single key -- no secret/public key split like VTpass, and no
+// signature/HMAC. Their docs show it as a plain `apikey` body param, but
+// real behavior (confirmed by hitting the live endpoint directly) doesn't
+// match the docs on two points:
+//   1. The URL needs a TRAILING SLASH -- POST /api/airtime (no slash)
+//      doesn't reach the working handler (their server appears to redirect
+//      it, which silently downgrades the method, producing a nonsensical
+//      "Only POST method is allowed" error from what was actually a GET).
+//      POST /api/airtime/ (with the slash) reaches the real handler.
+//   2. Sending `apikey` as a body param (or query param) is NOT enough --
+//      the API replies "Your authorization token is required." even with a
+//      trailing-slash URL and a body apikey. Their own wording ("token")
+//      points at header-based auth, so the key is sent as an
+//      `Authorization: Bearer <key>` header below, in addition to keeping
+//      `apikey` in the body (harmless either way, and covers the case
+//      where the docs' body-param claim is also partially right).
 //
 // `network` must be exactly "MTN" | "GLO" | "AIRTEL" | "9MOBILE" (their
 // docs example use uppercase). `plan` is a numeric Plan Id -- Hadjibs' own
@@ -72,9 +81,14 @@ async function hadjibsPost(path: string, params: Record<string, string | number>
   const body = new URLSearchParams({ apikey: HADJIBS_API_KEY, ...Object.fromEntries(
     Object.entries(params).map(([k, v]) => [k, String(v)])
   ) });
-  const res = await fetch(`${HADJIBS_BASE_URL}${path}`, {
+  // Trailing slash required -- see header comment. path is passed WITHOUT
+  // one (e.g. "/airtime") so it reads naturally at call sites; added here.
+  const res = await fetch(`${HADJIBS_BASE_URL}${path}/`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Authorization": `Bearer ${HADJIBS_API_KEY}`,
+    },
     body,
   });
   return res.json();
