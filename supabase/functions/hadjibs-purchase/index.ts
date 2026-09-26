@@ -18,8 +18,8 @@
 //
 // Auth is a single key -- no secret/public key split like VTpass, and no
 // signature/HMAC. Their docs show it as a plain `apikey` body param, but
-// real behavior (confirmed by hitting the live endpoint directly) doesn't
-// match the docs on two points:
+// real behavior (confirmed by hitting the live endpoint directly, and by a
+// real logged purchase attempt) doesn't match the docs on three points:
 //   1. The URL needs a TRAILING SLASH -- POST /api/airtime (no slash)
 //      doesn't reach the working handler (their server appears to redirect
 //      it, which silently downgrades the method, producing a nonsensical
@@ -28,10 +28,17 @@
 //   2. Sending `apikey` as a body param (or query param) is NOT enough --
 //      the API replies "Your authorization token is required." even with a
 //      trailing-slash URL and a body apikey. Their own wording ("token")
-//      points at header-based auth, so the key is sent as an
-//      `Authorization: Bearer <key>` header below, in addition to keeping
-//      `apikey` in the body (harmless either way, and covers the case
-//      where the docs' body-param claim is also partially right).
+//      points at header-based auth, so the key is also sent as an
+//      `Authorization` header (in addition to keeping `apikey` in the body,
+//      harmless either way).
+//   3. The Authorization header must be the RAW KEY, with NO "Bearer "
+//      prefix. A real failed purchase came back with
+//      {"status":"fail","msg":"Authorization token not found Bearer <key>"}
+//      -- their server echoes back the exact header value it received and
+//      says it wasn't found, meaning it compares the raw header value
+//      against a stored key rather than stripping a "Bearer " prefix first.
+//      So "Authorization: Bearer <key>" fails; "Authorization: <key>" is
+//      what their server actually expects.
 //
 // `network` must be exactly "MTN" | "GLO" | "AIRTEL" | "9MOBILE" (their
 // docs example use uppercase). `plan` is a numeric Plan Id -- Hadjibs' own
@@ -87,7 +94,13 @@ async function hadjibsPost(path: string, params: Record<string, string | number>
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
-      "Authorization": `Bearer ${HADJIBS_API_KEY}`,
+      // Confirmed via a real failed purchase's logged response:
+      // {"status":"fail","msg":"Authorization token not found Bearer <key>"}
+      // -- their server echoes back the exact header value it received and
+      // says it wasn't found, which means it's comparing the RAW header
+      // value against a stored key rather than stripping a "Bearer " prefix
+      // first. So the prefix itself is the bug: send the key alone.
+      "Authorization": HADJIBS_API_KEY,
     },
     body,
   });
