@@ -73,7 +73,6 @@ export default function Data() {
         service: "data",
         serviceId: network,
         variationCode: selectedPlan.code,
-        variationLabel: selectedPlan.name,
         phone,
         amount: selectedPlan.price,
       });
