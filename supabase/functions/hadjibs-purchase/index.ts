@@ -107,8 +107,25 @@ async function hadjibsPost(path: string, params: Record<string, string | number>
   return res.json();
 }
 
-// Networks Hadjibs' own docs list for both airtime and data.
+// Their public docs say `network` takes MTN/GLO/AIRTEL/9MOBILE as a plain
+// string -- that's also what their own dashboard's Buy Airtime/Buy Data
+// pages LOOK like they use (a <select> showing those labels). But a real
+// failed purchase came back {"status":"fail","msg":"Network Id Required"}
+// with exactly that string sent, so the docs are wrong here too (same
+// pattern as the trailing-slash and auth-header findings above). Inspecting
+// the dashboard's own <select id="networkid"> element directly (its actual
+// DOM, not the label text) shows the option VALUES it submits are numeric:
+// MTN=1, GLO=2, 9MOBILE=3, AIRTEL=4 -- confirmed identically on both the
+// Buy Airtime and Buy Data pages. That's what the API actually wants.
 const NETWORK_IDS: Record<string, string> = {
+  mtn: "1",
+  glo: "2",
+  airtel: "4",
+  "9mobile": "3",
+};
+// Human-readable labels, kept only for the 9mobile-data guard below and for
+// clearer log lines -- NOT sent to the API (see NETWORK_IDS above).
+const NETWORK_LABELS: Record<string, string> = {
   mtn: "MTN",
   glo: "GLO",
   airtel: "AIRTEL",
@@ -150,7 +167,7 @@ Deno.serve(async (req) => {
     if (!network) {
       return json({ error: `"${body.serviceId}" is not a supported network` }, { status: 400 });
     }
-    if (service === "data" && network === "9MOBILE") {
+    if (service === "data" && body.serviceId === "9mobile") {
       // Confirmed against Hadjibs' own live Pricing page: the Data Plan
       // table has rows for MTN/AIRTEL/GLO only, no 9MOBILE bundles at all
       // (despite 9MOBILE being a documented valid network value generally).
@@ -191,7 +208,12 @@ Deno.serve(async (req) => {
       hadjibsJson = await hadjibsPost("/data", { network, plan, phone });
     }
 
-    console.log("hadjibs-purchase: outgoing request", service, network, phone);
+    console.log(
+      "hadjibs-purchase: outgoing request",
+      service,
+      `${NETWORK_LABELS[body.serviceId]} (id ${network})`,
+      phone
+    );
     console.log("hadjibs-purchase: raw Hadjibs response", JSON.stringify(hadjibsJson));
 
     const success = hadjibsJson?.status === "success";
