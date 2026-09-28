@@ -385,7 +385,15 @@ $$ language plpgsql security definer;
 -- else, since every enforcement point calls through this one function.
 alter table public.users add column if not exists kyc_tier smallint not null default 1 check (kyc_tier in (1, 2, 3));
 
-create or replace function public.kyc_tier_limits(p_tier smallint)
+-- p_tier is `integer`, not `smallint`: every call site does
+-- `kyc_tier_limits(coalesce(v_tier, 1))` where v_tier is smallint but the
+-- literal fallback (1/2/3) is a plain integer -- coalesce(smallint, integer)
+-- resolves to integer, and Postgres won't implicitly cast that down to
+-- smallint to match a function overload, so a smallint-arg version here
+-- fails every real call with "function ...(integer) does not exist" even
+-- though users.kyc_tier really is smallint. integer accepts both directions
+-- (smallint auto-promotes to integer, not the reverse).
+create or replace function public.kyc_tier_limits(p_tier integer)
 returns table(max_balance numeric, daily_limit numeric) as $$
 begin
   return query select
