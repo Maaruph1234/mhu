@@ -107,6 +107,40 @@ async function hadjibsPost(path: string, params: Record<string, string | number>
   return res.json();
 }
 
+// Two real purchase attempts have now failed with
+// {"status":"fail","msg":"Network Id Required"} -- once with `network` set
+// to the docs' string value ("MTN"), once with `network` set to the numeric
+// id their own dashboard <select id="networkid"> submits ("1"). Same error
+// both times, which points at the FIELD NAME being wrong, not the value.
+// Their dashboard's own element id is "networkid" (not "network"), so
+// that's the leading guess, with a few sibling namings tried after it.
+// Whichever param name gets a response that no longer mentions "network"
+// wins -- logged as `hadjibs-purchase: network field candidate results` so
+// the real answer is visible in the function logs after the next real
+// purchase attempt, without needing another manual round-trip to add yet
+// another guess.
+const NETWORK_FIELD_CANDIDATES = ["networkid", "network_id", "networkId", "network"];
+
+async function hadjibsPostWithNetworkFallback(
+  path: string,
+  networkId: string,
+  restParams: Record<string, string | number>
+) {
+  const attempts: { field: string; response: Record<string, unknown> }[] = [];
+  for (const field of NETWORK_FIELD_CANDIDATES) {
+    const response = await hadjibsPost(path, { [field]: networkId, ...restParams });
+    attempts.push({ field, response });
+    const msg = String(response?.msg ?? response?.message ?? "").toLowerCase();
+    const stillAboutNetwork = msg.includes("network");
+    if (!stillAboutNetwork) {
+      console.log("hadjibs-purchase: network field candidate results", JSON.stringify(attempts));
+      return response;
+    }
+  }
+  console.log("hadjibs-purchase: network field candidate results (all failed)", JSON.stringify(attempts));
+  return attempts[attempts.length - 1].response;
+}
+
 // Their public docs say `network` takes MTN/GLO/AIRTEL/9MOBILE as a plain
 // string -- that's also what their own dashboard's Buy Airtime/Buy Data
 // pages LOOK like they use (a <select> showing those labels). But a real
@@ -197,7 +231,7 @@ Deno.serve(async (req) => {
 
     let hadjibsJson: Record<string, unknown>;
     if (service === "airtime") {
-      hadjibsJson = await hadjibsPost("/airtime", { network, amount, phone });
+      hadjibsJson = await hadjibsPostWithNetworkFallback("/airtime", network, { amount, phone });
     } else {
       // variationCode carries Hadjibs' numeric Plan Id (see
       // src/data/hadjibsDataPlans.ts) -- required for /api/data.
@@ -205,7 +239,7 @@ Deno.serve(async (req) => {
       if (!plan) {
         return json({ error: "Missing data plan" }, { status: 400 });
       }
-      hadjibsJson = await hadjibsPost("/data", { network, plan, phone });
+      hadjibsJson = await hadjibsPostWithNetworkFallback("/data", network, { plan, phone });
     }
 
     console.log(

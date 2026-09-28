@@ -160,6 +160,28 @@ Deno.serve(async (req) => {
       return json({ error: "Set up your Xpress Wallet funding account first (Fund Wallet)" }, { status: 400 });
     }
 
+    // Logged so a failed "insufficient balance" response can actually be
+    // diagnosed -- previously this function logged nothing at all, so a
+    // real transfer failing even with a genuinely real wallet balance
+    // (task #52) had no evidence trail to work from. In particular: Xpress
+    // Wallet's own transfer response includes a `charges` field (see header
+    // comment), meaning THEY may deduct a fee on top of `amount` -- our
+    // local balance check above only verifies wallet_balance >= amount,
+    // with no allowance for a transfer fee. If that's the real cause, this
+    // log line (local balance vs amount requested) plus the raw response
+    // (which will show `charges` on a successful transfer, or the exact
+    // wording on a failure) will make it obvious on the next attempt.
+    console.log(
+      "xpresswallet-transfer: attempting transfer",
+      JSON.stringify({
+        userId: user.id,
+        localWalletBalance: userRow.wallet_balance,
+        amountRequested: amount,
+        bankCode,
+        accountNumber,
+      })
+    );
+
     const reference = generateReference();
     const res = await fetch(`${XW_BASE_URL}/transfer/bank/customer`, {
       method: "POST",
@@ -175,6 +197,11 @@ Deno.serve(async (req) => {
       }),
     });
     const transferJson = await res.json();
+
+    console.log(
+      "xpresswallet-transfer: raw Xpress Wallet response",
+      JSON.stringify({ httpStatus: res.status, body: transferJson })
+    );
 
     if (!res.ok || !transferJson?.status) {
       const baseTxn = {
