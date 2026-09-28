@@ -56,8 +56,19 @@ Deno.serve(async (req) => {
     const payload = await req.json().catch(() => ({}));
 
     // Best-effort audit trail of every delivery, regardless of whether the
-    // rest of this function can make sense of it.
-    await service.from("xpresswallet_webhook_events").insert({ payload }).select().maybeSingle();
+    // rest of this function can make sense of it. The insert error is
+    // checked and logged -- it silently went unchecked before, which meant
+    // the table not existing in the live database went completely
+    // unnoticed (every real delivery's raw payload was lost with no trace)
+    // until it was caught manually while investigating a support question.
+    const { error: auditError } = await service
+      .from("xpresswallet_webhook_events")
+      .insert({ payload })
+      .select()
+      .maybeSingle();
+    if (auditError) {
+      console.error("xpresswallet-webhook: failed to store raw payload:", auditError.message);
+    }
 
     // Try every plausible field path for the wallet/customer/account
     // identifier and the credited amount -- the docs don't confirm which
