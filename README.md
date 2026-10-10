@@ -5,10 +5,9 @@ airtime, data, TV subscriptions, electricity bills, exam pins, instant
 peer-to-peer transfers, USD virtual cards, extra ID verification, eSIM data
 packages, and flight booking. Visual style is a light fintech theme.
 Backend: Supabase (auth, database, edge functions, and built-in email OTP
-for signup verification), Hadjibs Data (airtime/data fulfillment, as of Oct
-2026), VTpass (TV/electricity/exam-pin fulfillment — no longer airtime/data,
-see the "Hadjibs Data" and "VTpass" sections below), Xpress Wallet (wallet
-funding + bank payouts via a real Providus Bank account per user).
+for signup verification), VTpass (airtime, data, TV subscriptions,
+electricity, and exam pins — see the "VTpass" section below), Xpress Wallet
+(wallet funding + bank payouts via a real Providus Bank account per user).
 
 This app shares ONE Supabase project with a companion Flutter mobile app
 ("MHU Super App"). Every edge function listed below is deployed ONCE and
@@ -51,7 +50,6 @@ address are passed through to Korapay without being stored locally).
    `VITE_SUPABASE_ANON_KEY`.
 4. Deploy the edge functions in `supabase/functions/`:
    ```bash
-   supabase functions deploy hadjibs-purchase
    supabase functions deploy vtpass-purchase
    supabase functions deploy smsala-send-otp
    ```
@@ -88,44 +86,28 @@ later, otherwise they're safe to delete.
   shape (`api_id`, `sender_id`, `message`, `numbers`) — confirm the exact
   field names against Smsala's current API docs/dashboard and adjust.
 
-### Hadjibs Data (airtime, data)
-Hadjibs Data (hadjibsdata.com.ng) is the mobile-network subscriber provider
-as of Oct 2026, replacing VTpass for airtime + data specifically. Every
-endpoint/field used in `supabase/functions/hadjibs-purchase/index.ts` is
-confirmed directly against the account's own logged-in API docs page
-(Profile > API Access > API Docs) — a short list: `GET /api/user` (balance),
-`POST /api/data`, `POST /api/airtime`.
+### Hadjibs Data (REMOVED)
+Hadjibs Data (hadjibsdata.com.ng) briefly replaced VTpass as the
+mobile-network subscriber provider (airtime + data) in Oct 2026, but was
+abandoned after repeated integration issues that were never fully resolved
+against the live API: an undocumented trailing-slash requirement, a raw
+(non-`Bearer`) Authorization header the public docs didn't mention, and a
+numeric network-id format that still returned "Network Id Required" even
+after matching the values shown in Hadjibs' own dashboard `<select>`
+element. Reverted back to VTpass for airtime and data. `src/lib/hadjibs.ts`,
+`src/data/hadjibsDataPlans.ts`, and `supabase/functions/hadjibs-purchase/`
+(plus the Flutter equivalents) are stub files noting the removal, same
+pattern as Provibill below.
 
-- Auth is a single API key — no secret/public key split. Copy it from
-  Profile > API Access on your Hadjibs account, then set as a Supabase
-  function secret:
-  ```bash
-  supabase secrets set HADJIBS_API_KEY=xxx
-  ```
-- Hadjibs has no live "list data plans" endpoint, unlike VTpass — the full
-  data-plan catalog (network, numeric Plan Id, name, price) is hand-
-  transcribed from the account's own Pricing page into
-  `src/data/hadjibsDataPlans.ts` (and mirrored in the Flutter app's
-  `lib/shared/data/hadjibs_data_plans.dart`). Re-scrape that page
-  periodically — Hadjibs adds/removes/reprices plans with no notice.
-- No 9mobile data bundles are offered yet (Hadjibs' Pricing page has no
-  9MOBILE rows in its Data Plan table) — 9mobile airtime still works.
-- No requery/status-check endpoint exists — once `/api/data` or
-  `/api/airtime` responds, that's the only signal available; see the
-  header comment in `hadjibs-purchase/index.ts` for how an ambiguous
-  network timeout is handled.
-- The doc's own example (`plan=500MB`) doesn't match the real numeric Plan
-  Ids in the Pricing table (e.g. `217`) — this codebase uses the numeric
-  ids, which is what a reseller API actually expects, but re-confirm
-  against a real test purchase before relying on it live.
-
-### VTpass (TV, electricity, exam pins)
-VTpass (see vtpass.com/documentation) is the fulfillment provider for the
-three products Hadjibs' public API doesn't offer — no longer airtime/data
-(see "Hadjibs Data" above). Every endpoint/field used in
+### VTpass (airtime, data, TV, electricity, exam pins)
+VTpass (see vtpass.com/documentation) is the fulfillment provider for all
+five subscriber products, including airtime and data again (see "Hadjibs
+Data" above for why). Every endpoint/field used in
 `supabase/functions/vtpass-purchase/index.ts` is confirmed directly against
 VTpass's own docs (auth headers, `/pay`, `/requery`, `/merchant-verify`,
-`/service-variations`), not guessed.
+`/service-variations`), not guessed. Data plans (and TV bouquets) are
+looked up live via `/service-variations?serviceID=X` — no hand-maintained
+catalog needed, unlike Hadjibs.
 
 - Get your API key, secret key, and public key from your VTpass sandbox
   account (Profile > API Keys at sandbox.vtpass.com), then set as Supabase
@@ -341,12 +323,13 @@ src/
   components/dashboard/   TierCard (KYC tier + Tier 3 submission, Profile page section)
   components/layout/      Marketing nav/footer, dashboard sidebar, auth layout
   context/                 AuthContext (Supabase auth), WalletContext (balance + transactions)
-  lib/                     supabaseClient, smsala.ts, hadjibs.ts (ACTIVE -- airtime/data),
-                           vtpass.ts (ACTIVE -- TV/electricity/exam-pins), provibill.ts (removed,
-                           stub), xpressWallet.ts (ACTIVE -- wallet funding + bank payouts),
-                           tier3.ts (Tier 3 manual-review submission), format.ts
+  lib/                     supabaseClient, smsala.ts, hadjibs.ts (removed, stub),
+                           vtpass.ts (ACTIVE -- airtime/data/TV/electricity/exam-pins),
+                           provibill.ts (removed, stub), xpressWallet.ts (ACTIVE -- wallet
+                           funding + bank payouts), tier3.ts (Tier 3 manual-review submission),
+                           format.ts
   data/reference.ts        Static network/TV/disco/exam-body reference data (placeholders — see above)
-  data/hadjibsDataPlans.ts Hadjibs Data's real data-plan catalog (hand-transcribed, see above)
+  data/hadjibsDataPlans.ts Removed, stub -- see "Hadjibs Data (REMOVED)" above
   lib/dataPlanCategories.ts Buckets data-plan/TV-bouquet variations into Daily/Weekly/Monthly/etc.
   pages/marketing/         Landing page
   pages/auth/              Login, Register, OTP verification, Forgot/Reset password
@@ -354,20 +337,19 @@ src/
                            Transactions, Referrals, Profile
 supabase/
   schema.sql               Tables, RLS policies, transfer_funds RPC, KYC tier system
-  functions/                Edge functions that hold the real Hadjibs/VTpass/Smsala/Xpress Wallet
-                           secret keys (plus stub Provibill/Payvessel/Korapay ones, all removed --
-                           see the provider-history sections above)
+  functions/                Edge functions that hold the real VTpass/Smsala/Xpress Wallet
+                           secret keys (plus stub Hadjibs/Provibill/Payvessel/Korapay ones, all
+                           removed -- see the provider-history sections above)
 ```
 
-## 4. Why Hadjibs/VTpass/Smsala calls go through Supabase Edge Functions
+## 4. Why VTpass/Smsala calls go through Supabase Edge Functions
 
-Hadjibs Data, VTpass, and Smsala all require secret credentials. Secrets
-must never ship in frontend JavaScript (anyone can open dev tools and read
-them), so `src/lib/hadjibs.ts`, `src/lib/vtpass.ts`, and `src/lib/smsala.ts`
-never call those APIs directly — they call a Supabase Edge Function
-(`supabase.functions.invoke(...)`), and the edge function (which runs
-server-side, holding the real secrets) makes the actual Hadjibs/VTpass/
-Smsala request.
+VTpass and Smsala both require secret credentials. Secrets must never ship
+in frontend JavaScript (anyone can open dev tools and read them), so
+`src/lib/vtpass.ts` and `src/lib/smsala.ts` never call those APIs directly
+— they call a Supabase Edge Function (`supabase.functions.invoke(...)`),
+and the edge function (which runs server-side, holding the real secrets)
+makes the actual VTpass/Smsala request.
 
 ## 5. Build
 

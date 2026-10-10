@@ -14,17 +14,16 @@ import type { TransactionType } from "../types";
  * credentials server-side is required — they must never ship in frontend
  * JS.
  *
- * As of Oct 2026, VTpass only handles Cable TV, Electricity, and Exam Pins
- * here -- Airtime and Data moved to Hadjibs Data (see src/lib/hadjibs.ts),
- * which is now the mobile-network subscriber provider for those two
- * products. Kept for the three products Hadjibs' public API doesn't offer.
+ * As of Oct 2026, VTpass is back to handling Airtime and Data again
+ * (reverted from a brief switch to Hadjibs Data, now retired) alongside
+ * Cable TV, Electricity, and Exam Pins -- every subscriber product.
  *
  * In demo mode (no Supabase configured yet), every call below short-
  * circuits into a simulated response and updates the local demo
  * wallet/transactions instead — see src/lib/demoStore.ts.
  */
 
-export type VtpassService = "tv-subscription" | "electricity" | "exam-pin";
+export type VtpassService = "airtime" | "data" | "tv-subscription" | "electricity" | "exam-pin";
 
 export interface VtpassPurchasePayload {
   service: VtpassService;
@@ -104,12 +103,12 @@ export async function verifySmartcard(provider: string, smartcardNumber: string)
 }
 
 /**
- * Real VTpass TV bouquet variation codes for a given provider -- fetched
- * live via GET /service-variations rather than the hardcoded placeholder
- * ids in src/data/reference.ts (those were only ever meant to build the UI
- * against; VTpass rejects them as invalid). Data plans used to go through
- * here too before Data.tsx moved to Hadjibs' static catalog (see
- * src/lib/hadjibs.ts) -- only tv-subscription is left.
+ * Real VTpass bouquet/data-plan variation codes for a given provider/network
+ * -- fetched live via GET /service-variations rather than hardcoded
+ * placeholder ids (VTpass rejects made-up codes as invalid). Covers both TV
+ * bouquets (serviceId = "dstv" etc.) and data plans (serviceId = "mtn" etc.
+ * -- the edge function maps that to the real "mtn-data" VTpass serviceID,
+ * see DATA_IDS in vtpass-purchase/index.ts).
  */
 export interface VtpassVariation {
   code: string;
@@ -118,16 +117,25 @@ export interface VtpassVariation {
 }
 
 export async function getVariations(
-  service: "tv-subscription",
+  service: "data" | "tv-subscription",
   serviceId: string
 ): Promise<VtpassVariation[]> {
   if (isDemoMode) {
     await delay(400);
-    return TV_PLANS.filter((p) => p.provider === serviceId).map((p) => ({
-      code: p.id,
-      name: p.name,
-      price: p.price,
-    }));
+    if (service === "tv-subscription") {
+      return TV_PLANS.filter((p) => p.provider === serviceId).map((p) => ({
+        code: p.id,
+        name: p.name,
+        price: p.price,
+      }));
+    }
+    // No static demo-mode data-plan list -- a handful of made-up plans is
+    // enough to exercise the UI without needing a real catalog in demo mode.
+    return [
+      { code: `${serviceId}-500mb`, name: "500MB - 30 Days", price: 500 },
+      { code: `${serviceId}-1gb`, name: "1GB - 30 Days", price: 1000 },
+      { code: `${serviceId}-5gb`, name: "5GB - 30 Days", price: 3500 },
+    ];
   }
   const { data, error } = await supabase.functions.invoke("vtpass-purchase", {
     body: { action: "variations", service, serviceId },

@@ -1,11 +1,10 @@
 import type { Network, TvProvider, TvPlan, Disco, ExamBody } from "../types";
 
 // Static reference data (not user/transaction data). Networks, discos and exam
-// bodies rarely change, so these are safe to hardcode. Live TV bouquet prices
-// come from VTpass's "Get Variation Codes" endpoint (see src/lib/vtpass.ts);
-// data plan prices come from Hadjibs Data's static catalog (see
-// src/data/hadjibsDataPlans.ts) since Hadjibs has no equivalent live
-// endpoint. TV_PLANS below are placeholders to build the UI against.
+// bodies rarely change, so these are safe to hardcode. Live TV bouquet and
+// data plan prices both come from VTpass's "Get Variation Codes" endpoint
+// (see getVariations in src/lib/vtpass.ts) -- TV_PLANS below is only a
+// placeholder to build the UI against (and for demo mode).
 
 export const NETWORKS: Network[] = [
   { id: "mtn", name: "MTN", color: "#FFCB05", logo: "/networks/mtn.png" },

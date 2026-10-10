@@ -5,11 +5,10 @@
 //   VTPASS_BASE_URL=https://sandbox.vtpass.com/api  (switch to
 //   https://vtpass.com/api once provisioned for live)
 //
-// As of Oct 2026, this function only handles Cable TV, Electricity, and
-// Exam Pins -- Airtime and Data moved to Hadjibs Data (see
-// hadjibs-purchase), which is now the mobile-network subscriber provider
-// for those two products. Kept here for the three products Hadjibs'
-// public API doesn't offer.
+// As of Oct 2026, this function is back to handling Airtime and Data again
+// (reverted from a brief switch to Hadjibs Data -- hadjibs-purchase is now
+// retired, see its own file header) alongside Cable TV, Electricity, and
+// Exam Pins -- i.e. every subscriber product VTpass offers.
 //
 // Every endpoint/field/response shape here is confirmed directly against
 // VTpass's own documentation (vtpass.com/documentation), not guessed:
@@ -166,6 +165,33 @@ const EXAM_VARIATION_CODES: Record<string, string> = {
   waec: "waecdirect",
 };
 
+// Airtime service IDs, confirmed against vtpass.com/documentation's Airtime
+// Recharge API page — same simple network->serviceID map as every other
+// VTU provider in this codebase uses, just VTpass's own exact ids. Note
+// "etisalat" (not "9mobile") — VTpass kept the old brand name as its
+// serviceID even after the real network rebranded; our own NETWORKS list
+// (src/data/reference.ts) still shows "9mobile" to the customer.
+const AIRTIME_IDS: Record<string, string> = {
+  mtn: "mtn",
+  glo: "glo",
+  airtel: "airtel",
+  "9mobile": "etisalat",
+};
+
+// Data service IDs — VTpass gives data its own serviceIDs per network
+// (distinct from airtime's, note the "-data" suffix), confirmed against
+// vtpass.com/documentation's Data Bundle API page. The actual plan is
+// picked via variation_code (see getVariations/"variations" action below,
+// e.g. GET /service-variations?serviceID=mtn-data), not a separate static
+// catalog — VTpass's live endpoint is the source of truth for both the
+// plan list AND its current price.
+const DATA_IDS: Record<string, string> = {
+  mtn: "mtn-data",
+  glo: "glo-data",
+  airtel: "airtel-data",
+  "9mobile": "etisalat-data",
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -190,6 +216,8 @@ Deno.serve(async (req) => {
     const service = body.service as string;
 
     const resolveServiceId = (): string => {
+      if (service === "airtime") return AIRTIME_IDS[body.serviceId];
+      if (service === "data") return DATA_IDS[body.serviceId];
       if (service === "tv-subscription") return TV_IDS[body.serviceId];
       if (service === "electricity") return ELECTRICITY_IDS[body.serviceId];
       if (service === "exam-pin") return EXAM_IDS[body.serviceId];
@@ -277,7 +305,12 @@ Deno.serve(async (req) => {
       phone: body.phone ?? "08011111111",
     };
 
-    if (service === "tv-subscription") {
+    if (service === "data") {
+      // variation_code carries the live plan code from a prior
+      // "variations" call (GET /service-variations?serviceID=mtn-data,
+      // etc.) -- never a made-up/hardcoded code, VTpass rejects those.
+      payBody.variation_code = body.variationCode;
+    } else if (service === "tv-subscription") {
       payBody.billersCode = body.smartcardNumber;
       payBody.variation_code = body.variationCode;
       // "renew" is only valid when the customer is renewing their EXISTING
@@ -309,6 +342,8 @@ Deno.serve(async (req) => {
         ? `Meter ${body.meterNumber}`
         : service === "tv-subscription"
         ? `Smartcard ${body.smartcardNumber}`
+        : service === "airtime" || service === "data"
+        ? `To ${body.phone}`
         : `${body.quantity ?? 1} pin(s)`;
 
     // Logged so the raw VTpass response is retrievable from Supabase's
