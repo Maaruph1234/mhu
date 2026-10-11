@@ -1,9 +1,10 @@
 import { Link } from "react-router-dom";
-import { Smartphone, Wifi, Tv, Zap, GraduationCap, Send } from "lucide-react";
+import { Smartphone, Wifi, PhoneCall, Tv, Zap, GraduationCap, Send } from "lucide-react";
 
 const actions = [
   { to: "/dashboard/airtime", label: "Airtime", icon: Smartphone },
   { to: "/dashboard/data", label: "Data", icon: Wifi },
+  { to: "/dashboard/voice-minutes", label: "Voice Minutes", icon: PhoneCall },
   { to: "/dashboard/tv", label: "TV", icon: Tv },
   { to: "/dashboard/electricity", label: "Electricity", icon: Zap },
   { to: "/dashboard/exam-pins", label: "Exam Pins", icon: GraduationCap },

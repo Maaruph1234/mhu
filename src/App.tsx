@@ -17,6 +17,7 @@ import FundWallet from "./pages/dashboard/FundWallet";
 import Transfer from "./pages/dashboard/Transfer";
 import Airtime from "./pages/dashboard/Airtime";
 import Data from "./pages/dashboard/Data";
+import VoiceMinutes from "./pages/dashboard/VoiceMinutes";
 import Tv from "./pages/dashboard/Tv";
 import Electricity from "./pages/dashboard/Electricity";
 import ExamPins from "./pages/dashboard/ExamPins";
@@ -52,6 +53,7 @@ function App() {
             <Route path="transfer" element={<Transfer />} />
             <Route path="airtime" element={<Airtime />} />
             <Route path="data" element={<Data />} />
+            <Route path="voice-minutes" element={<VoiceMinutes />} />
             <Route path="tv" element={<Tv />} />
             <Route path="electricity" element={<Electricity />} />
             <Route path="exam-pins" element={<ExamPins />} />

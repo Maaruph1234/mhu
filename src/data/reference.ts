@@ -13,6 +13,13 @@ export const NETWORKS: Network[] = [
   { id: "9mobile", name: "9mobile", color: "#00A99D", logo: "/networks/9mobile.png" },
 ];
 
+// Only MTN ("Xtratalk") and Airtel ("Voice Bundle") publish a voice/
+// call-minute product via VTpass -- Glo and 9mobile have none (confirmed
+// against vtpass.com/documentation's glo-data/9mobile-data pages, neither
+// mentions "voice" or "minute"). VoiceMinutes.tsx uses this instead of the
+// full NETWORKS list so Glo/9mobile never show up with an empty tab.
+export const VOICE_NETWORKS: Network[] = NETWORKS.filter((n) => n.id === "mtn" || n.id === "airtel");
+
 export const TV_PROVIDERS: TvProvider[] = [
   { id: "dstv", name: "DStv", logo: "/tv/dstv.png" },
   { id: "gotv", name: "GOtv", logo: "/tv/gotv.png" },

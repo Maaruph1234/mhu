@@ -2,6 +2,7 @@ import { supabase, extractFunctionErrorMessage } from "./supabaseClient";
 import { isDemoMode } from "./demoMode";
 import { demoStore } from "./demoStore";
 import { TV_PLANS } from "../data/reference";
+import { applyDataPlanMarkup } from "./dataPlanMarkups";
 import type { TransactionType } from "../types";
 
 /**
@@ -141,5 +142,10 @@ export async function getVariations(
     body: { action: "variations", service, serviceId },
   });
   if (error) throw new Error(await extractFunctionErrorMessage(error));
-  return (data as { variations: VtpassVariation[] }).variations;
+  const variations = (data as { variations: VtpassVariation[] }).variations;
+  // Margin applied here, once, so every caller (Data.tsx, VoiceMinutes.tsx,
+  // Tv.tsx) and the actual purchase() amount (which reads p.price straight
+  // off these objects) all see and charge the same marked-up price -- see
+  // dataPlanMarkups.ts for which plans and why.
+  return variations.map((v) => ({ ...v, price: applyDataPlanMarkup(v.code, v.price) }));
 }

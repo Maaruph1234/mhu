@@ -185,6 +185,19 @@ export function categorizeDataPlan(name: string): DataPlanCategory {
   return "Other";
 }
 
+// Voice/call-minute bundles (VTpass's "Xtratalk"/voice-bundle products) ride
+// on the exact same mtn-data/airtel-data serviceID and /service-variations
+// endpoint as regular data bundles -- VTpass has no separate voice
+// serviceID. Confirmed directly against vtpass.com/documentation: Glo and
+// 9mobile's data pages have no "voice"/"minute" wording anywhere, so this
+// only ever matches MTN ("Xtratalk") and Airtel ("Voice Bundle") plan
+// names. Used to split the live variation list into "Data" vs "Voice Call
+// Minutes" sections (Data.tsx filters these OUT, VoiceMinutes.tsx filters
+// FOR these) instead of showing them mixed together.
+export function isVoicePlan(name: string): boolean {
+  return /\bxtratalk\b|\bvoice\s*bundle\b/i.test(name);
+}
+
 export function groupByCategory<T extends { name: string }>(
   items: T[],
   network: string

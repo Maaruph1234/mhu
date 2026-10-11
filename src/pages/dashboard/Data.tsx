@@ -8,7 +8,7 @@ import { NetworkPicker } from "../../components/ui/NetworkPicker";
 import { NETWORKS } from "../../data/reference";
 import { purchase, getVariations } from "../../lib/vtpass";
 import type { VtpassVariation } from "../../lib/vtpass";
-import { DATA_CATEGORY_ORDER, groupByCategory, type DataPlanCategory } from "../../lib/dataPlanCategories";
+import { DATA_CATEGORY_ORDER, groupByCategory, isVoicePlan, type DataPlanCategory } from "../../lib/dataPlanCategories";
 import { useWallet } from "../../context/WalletContext";
 import { formatCurrency } from "../../lib/format";
 
@@ -36,10 +36,15 @@ export default function Data() {
     getVariations("data", network)
       .then((list) => {
         if (cancelled) return;
-        if (list.length === 0) {
+        // VTpass serves voice/call-minute bundles (MTN Xtratalk, Airtel
+        // Voice Bundle) through this exact same endpoint -- filtered out
+        // here so they don't show up mixed into the data-bundle grid; see
+        // VoiceMinutes.tsx for where they actually live.
+        const dataPlans = list.filter((p) => !isVoicePlan(p.name));
+        if (dataPlans.length === 0) {
           setPlansError(`No data plans available for ${network} yet`);
         }
-        setPlans(list);
+        setPlans(dataPlans);
       })
       .catch((err) => {
         if (!cancelled) setPlansError((err as Error).message);
