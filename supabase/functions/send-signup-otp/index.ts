@@ -78,8 +78,16 @@ async function sendEmail(email: string, code: string) {
   });
   if (!res.ok) {
     const text = await res.text();
-    console.error("send-signup-otp: Resend error", text);
-    throw new Error("Could not send the verification email. Please try again.");
+    console.error("send-signup-otp: Resend error", res.status, text);
+    let reason = "";
+    try {
+      reason = JSON.parse(text)?.message ?? "";
+    } catch {
+      /* non-JSON body */
+    }
+    throw new Error(
+      `Could not send the verification email. Please try again.${reason ? ` (${String(reason).slice(0, 140)})` : ""}`
+    );
   }
 }
 

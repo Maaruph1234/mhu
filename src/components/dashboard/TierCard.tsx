@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { useAuth } from "../../context/AuthContext";
 import * as tier3 from "../../lib/tier3";
+import * as xpressWallet from "../../lib/xpressWallet";
 import { TIER3_DOCUMENT_LABELS } from "../../lib/tier3";
 import type { Tier3DocumentType, Tier3Verification } from "../../types";
 
@@ -12,18 +13,19 @@ import type { Tier3DocumentType, Tier3Verification } from "../../types";
 // the real enforcement happens server-side (transfer_funds,
 // xpresswallet-transfer, xpresswallet-create-wallet). Keep these two in
 // sync if the numbers ever change.
+// Real limits from the signed Providus/Xpress Wallet SLA (Schedule 1).
 const TIER_LIMITS: Record<1 | 2 | 3, { maxBalance: number; dailyLimit: number }> = {
-  1: { maxBalance: 50_000, dailyLimit: 20_000 },
+  1: { maxBalance: 300_000, dailyLimit: 50_000 },
   2: { maxBalance: 500_000, dailyLimit: 200_000 },
-  3: { maxBalance: 5_000_000, dailyLimit: 1_000_000 },
+  3: { maxBalance: Infinity, dailyLimit: 5_000_000 },
 };
 
 function formatNaira(n: number) {
-  return `₦${n.toLocaleString("en-NG")}`;
+  return Number.isFinite(n) ? `₦${n.toLocaleString("en-NG")}` : "No limit";
 }
 
 export function TierCard() {
-  const { profile } = useAuth();
+  const { profile, refreshProfile } = useAuth();
   const tierNum = (profile?.kyc_tier ?? 1) as 1 | 2 | 3;
   const limits = TIER_LIMITS[tierNum];
 
@@ -41,6 +43,23 @@ export function TierCard() {
 
   const latestSubmission = submissions[0];
   const hasPendingSubmission = latestSubmission?.status === "pending";
+
+  const [upgrading, setUpgrading] = useState(false);
+  const [upgradeMsg, setUpgradeMsg] = useState<string | null>(null);
+
+  const handleUpgrade = async () => {
+    setUpgrading(true);
+    setUpgradeMsg(null);
+    try {
+      const result = await xpressWallet.upgradeTier();
+      setUpgradeMsg(result.message);
+      await refreshProfile();
+    } catch (err) {
+      setUpgradeMsg((err as Error).message);
+    } finally {
+      setUpgrading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,14 +102,20 @@ export function TierCard() {
       </div>
 
       {tierNum === 1 && (
-        <div className="mt-4">
+        <div className="mt-4 space-y-3">
           <p className="text-sm text-slate-500">
-            Verify your account with your BVN to unlock a real bank account for funding, higher limits, and bank
-            transfers.
+            Get a funding account with your BVN, then upgrade to Tier 2 using your verified NIN for higher limits
+            and so other banks accept transfers to your account.
           </p>
-          <Link to="/dashboard/fund" className="mt-3 inline-block text-sm font-medium text-accent hover:underline">
-            Verify now →
-          </Link>
+          <div className="flex flex-wrap items-center gap-4">
+            <Link to="/dashboard/fund" className="text-sm font-medium text-accent hover:underline">
+              Set up funding account →
+            </Link>
+            <Button type="button" loading={upgrading} onClick={handleUpgrade}>
+              Upgrade to Tier 2
+            </Button>
+          </div>
+          {upgradeMsg && <p className="text-sm text-slate-600">{upgradeMsg}</p>}
         </div>
       )}
 

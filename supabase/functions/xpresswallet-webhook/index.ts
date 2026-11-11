@@ -48,7 +48,12 @@ function ok200(body: Record<string, unknown>) {
 Deno.serve(async (req) => {
   try {
     const url = new URL(req.url);
+    console.log(
+      "xpresswallet-webhook: incoming",
+      JSON.stringify({ method: req.method, secretConfigured: !!WEBHOOK_SECRET, secretProvided: !!url.searchParams.get("secret") })
+    );
     if (WEBHOOK_SECRET && url.searchParams.get("secret") !== WEBHOOK_SECRET) {
+      console.error("xpresswallet-webhook: rejected, secret missing or wrong");
       return new Response(JSON.stringify({ error: "Invalid webhook secret" }), { status: 401 });
     }
 
@@ -103,7 +108,7 @@ Deno.serve(async (req) => {
       return ok200({ status: "stored", reason: "no positive amount on payload" });
     }
 
-    let query = service.from("xpresswallet_accounts").select("user_id");
+    let query = service.from("xpresswallet_accounts").select("user_id, xw_last_balance");
     if (walletId) query = query.eq("xw_wallet_id", walletId);
     else if (customerId) query = query.eq("xw_customer_id", customerId);
     else query = query.eq("account_number", accountNumber);
@@ -130,6 +135,20 @@ Deno.serve(async (req) => {
       .eq("id", account.user_id)
       .single();
 
+    // Advance the sync baseline by the same amount so xpresswallet-sync-balance
+    // doesn't credit this deposit a second time. Optimistic lock: if the sync
+    // already moved the baseline (it saw the money first), skip crediting here.
+    const lastBal = Number(account.xw_last_balance ?? 0);
+    const { data: claimed } = await service
+      .from("xpresswallet_accounts")
+      .update({ xw_last_balance: lastBal + amount })
+      .eq("user_id", account.user_id)
+      .eq("xw_last_balance", lastBal)
+      .select("user_id");
+    if (!claimed?.length) {
+      return ok200({ status: "already credited by balance sync" });
+    }
+
     if (userRow) {
       await service
         .from("users")
@@ -144,6 +163,8 @@ Deno.serve(async (req) => {
       status: "successful",
       reference,
       title: "Wallet funded via bank transfer",
+      // Required: the notify_on_transaction trigger fails on a NULL subtitle.
+      subtitle: "Bank transfer to your funding account",
     });
 
     return ok200({ status: "ok" });

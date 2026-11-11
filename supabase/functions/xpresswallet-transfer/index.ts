@@ -51,6 +51,19 @@ function json(body: unknown, init: ResponseInit = {}) {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+// Outward-transfer fee schedule from the signed Providus/Xpress Wallet SLA
+// (Schedule 2, VAT exclusive): under ₦5,000 = ₦10, under ₦50,000 = ₦26,
+// ₦50,000 and above = ₦50, plus 7.5% VAT, plus ₦50 stamp duty charged on
+// the sender (assumed to apply from ₦10,000, the usual statutory threshold).
+// Used only to ESTIMATE the fee for the balance pre-check and as a fallback
+// -- the amount actually debited is taken from Xpress Wallet's own response
+// whenever it reports charges/vat/stamp duty/total.
+function estimateTransferFee(amount: number): number {
+  const base = amount < 5000 ? 10 : amount < 50000 ? 26 : 50;
+  const stamp = amount >= 10000 ? 50 : 0;
+  return Math.round((base * 1.075 + stamp) * 100) / 100;
+}
+
 function generateReference(): string {
   return `TRFBANK-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -135,8 +148,15 @@ Deno.serve(async (req) => {
       .select("wallet_balance, display_name")
       .eq("id", user.id)
       .single();
-    if (!userRow || Number(userRow.wallet_balance ?? 0) < amount) {
-      return json({ error: "Insufficient wallet balance" }, { status: 402 });
+    // Xpress Wallet charges a fee on every outward transfer (SLA Schedule
+    // 2) that comes out of the customer's wallet ON TOP of the amount, so
+    // the balance must cover amount + fee, not just the amount.
+    const estimatedFee = estimateTransferFee(amount);
+    if (!userRow || Number(userRow.wallet_balance ?? 0) < amount + estimatedFee) {
+      return json(
+        { error: `Insufficient wallet balance (a transfer fee of about ₦${estimatedFee} applies)` },
+        { status: 402 }
+      );
     }
 
     // KYC tier enforcement -- same shared rule transfer_funds (wallet-to-
@@ -204,6 +224,11 @@ Deno.serve(async (req) => {
     );
 
     if (!res.ok || !transferJson?.status) {
+      // The failure reason is saved on the transaction itself (not just in
+      // function logs, which expire) -- a failed ₦7,000 payout on Nov 4 had
+      // no recorded reason anywhere once its logs aged out.
+      const failReason = String(transferJson?.message ?? `HTTP ${res.status}`).slice(0, 120);
+      console.error("xpresswallet-transfer: payout failed", failReason);
       const baseTxn = {
         user_id: user.id,
         type: "bank_transfer_out",
@@ -211,7 +236,7 @@ Deno.serve(async (req) => {
         status: "failed",
         reference,
         title: `Bank transfer to ${accountName || accountNumber}`,
-        subtitle: `Account ${accountNumber}`,
+        subtitle: `Account ${accountNumber} - ${failReason}`,
       };
       await service.from("transactions").insert(baseTxn);
       return json({ error: transferJson?.message ?? "Bank transfer could not be initiated" }, { status: 502 });
@@ -219,12 +244,27 @@ Deno.serve(async (req) => {
 
     // Confirmed successful -- debit now, not optimistically beforehand (see
     // header comment on why this differs from korapay-payout).
+    // Debit what Xpress Wallet ACTUALLY took from the customer's wallet
+    // (amount + charges + VAT + stamp duty), so our ledger stays in step
+    // with their real balance instead of drifting by the fee on every
+    // payout. Falls back to the SLA estimate if the response carries no fee
+    // fields at all.
+    const t = (transferJson.transfer ?? {}) as Record<string, unknown>;
+    const num = (v: unknown) => (typeof v === "number" ? v : Number(v) || 0);
+    const hasFeeFields = ["charges", "vat", "stampDutyAmount", "totalAmount"].some((k) => t[k] !== undefined);
+    const totalDebit = hasFeeFields
+      ? num(t.totalAmount) > 0
+        ? num(t.totalAmount)
+        : amount + num(t.charges) + num(t.vat) + num(t.stampDutyAmount)
+      : amount + estimatedFee;
+    const fee = Math.max(0, Math.round((totalDebit - amount) * 100) / 100);
+
     await service
       .from("users")
-      .update({ wallet_balance: Number(userRow.wallet_balance ?? 0) - amount })
+      .update({ wallet_balance: Math.max(0, Number(userRow.wallet_balance ?? 0) - totalDebit) })
       .eq("id", user.id);
 
-    const realReference = transferJson.transfer?.reference ?? reference;
+    const realReference = (t.reference as string | undefined) ?? reference;
 
     await service.from("transactions").insert({
       user_id: user.id,
@@ -233,13 +273,14 @@ Deno.serve(async (req) => {
       status: "successful",
       reference: realReference,
       title: `Bank transfer to ${accountName || accountNumber}`,
-      subtitle: `Account ${accountNumber}`,
+      subtitle: fee > 0 ? `Account ${accountNumber} - fee ₦${fee}` : `Account ${accountNumber}`,
     });
 
     return json({
       success: true,
       reference: realReference,
-      message: transferJson.message ?? "Bank transfer completed",
+      fee,
+      message: fee > 0 ? `Transfer completed. Fee: ₦${fee}` : transferJson.message ?? "Bank transfer completed",
     });
   } catch (err) {
     return json({ error: (err as Error).message }, { status: 500 });

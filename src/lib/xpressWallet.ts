@@ -96,6 +96,25 @@ export async function createAccount(input: CreateXpressWalletInput): Promise<Xpr
   return data as XpressWalletAccount;
 }
 
+/** MHU-to-MHU transfer: moves the real money between the two users' Xpress
+ * Wallet sub-wallets (falls back to a local-only transfer if either user has
+ * no Xpress Wallet account), then mirrors it on the app balances. */
+export async function peerTransfer(input: {
+  identifier: string;
+  amount: number;
+  note?: string | null;
+}): Promise<{ reference: string; fee: number }> {
+  const { data, error } = await supabase.functions.invoke("xpresswallet-peer-transfer", { body: input });
+  if (error) throw new Error(await extractFunctionErrorMessage(error));
+  return data as { reference: string; fee: number };
+}
+
+export async function upgradeTier(): Promise<{ tier: number; message: string }> {
+  const { data, error } = await supabase.functions.invoke("xpresswallet-upgrade-tier", { body: {} });
+  if (error) throw new Error(await extractFunctionErrorMessage(error));
+  return data as { tier: number; message: string };
+}
+
 export async function listBanks(): Promise<XpressWalletBank[]> {
   if (isDemoMode) {
     return [

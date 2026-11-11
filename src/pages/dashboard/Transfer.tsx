@@ -4,7 +4,7 @@ import { Card } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { SearchableSelect } from "../../components/ui/SearchableSelect";
-import { supabase } from "../../lib/supabaseClient";
+import * as xpressWallet from "../../lib/xpressWallet";
 import { useWallet } from "../../context/WalletContext";
 import { formatCurrency } from "../../lib/format";
 import { isDemoMode } from "../../lib/demoMode";
@@ -90,13 +90,14 @@ function TransferToMhuUser({ onDone }: { onDone: () => Promise<void> }) {
         return;
       }
 
-      const { data, error: rpcError } = await supabase.rpc("transfer_funds", {
-        p_identifier: identifier,
-        p_amount: transferAmount,
-        p_note: note || null,
+      const data = await xpressWallet.peerTransfer({
+        identifier,
+        amount: transferAmount,
+        note: note || null,
       });
-      if (rpcError) throw new Error(rpcError.message);
-      setSuccess(`Transfer successful. Reference: ${data?.reference ?? ""}`);
+      setSuccess(
+        `Transfer successful. Reference: ${data?.reference ?? ""}${data?.fee ? ` (fee ₦${data.fee})` : ""}`
+      );
       setIdentifier("");
       setAmount("");
       setNote("");

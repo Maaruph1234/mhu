@@ -35,6 +35,7 @@ create table if not exists public.xpresswallet_accounts (
   bank_name text not null,
   bank_code text,
   status text not null default 'ACTIVE',
+  xw_last_balance numeric not null default 0, -- real XW balance already accounted for (see xpresswallet-sync-balance)
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -397,8 +398,11 @@ create or replace function public.kyc_tier_limits(p_tier integer)
 returns table(max_balance numeric, daily_limit numeric) as $$
 begin
   return query select
-    case p_tier when 1 then 50000::numeric when 2 then 500000::numeric when 3 then 5000000::numeric else 50000::numeric end,
-    case p_tier when 1 then 20000::numeric when 2 then 200000::numeric when 3 then 1000000::numeric else 20000::numeric end;
+    -- Real limits from the signed Providus/Xpress Wallet SLA (Schedule 1):
+    -- Tier 1 N50,000 daily / N300,000 max balance; Tier 2 N200,000 /
+    -- N500,000; Tier 3 N5,000,000 daily / no balance cap (1e15 = "no cap").
+    case p_tier when 1 then 300000::numeric when 2 then 500000::numeric when 3 then 1000000000000000::numeric else 300000::numeric end,
+    case p_tier when 1 then 50000::numeric when 2 then 200000::numeric when 3 then 5000000::numeric else 50000::numeric end;
 end;
 $$ language plpgsql immutable;
 
@@ -527,3 +531,18 @@ create policy "Users can view own tier3 documents" on storage.objects
     bucket_id = 'tier3-documents'
     and (storage.foldername(name))[1] = auth.uid()::text
   );
+
+-- Single-row cooldown state for the vtpass-balance-alert edge function --
+-- not per-user, just one global row tracking the last time a low-balance
+-- email was sent (and what the balance was then), so the scheduled check
+-- doesn't email on every single run while the balance stays low. Service
+-- role only; nothing here is user-facing.
+create table if not exists public.vtpass_balance_alert_state (
+  id boolean primary key default true check (id), -- always exactly one row
+  last_alerted_at timestamptz,
+  last_balance numeric
+);
+
+alter table public.vtpass_balance_alert_state enable row level security;
+-- No policies on purpose -- service role (the edge function) is the only
+-- thing that ever reads/writes this table.

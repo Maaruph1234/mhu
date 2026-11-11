@@ -75,8 +75,34 @@ Deno.serve(async (req) => {
     });
 
     if (error) {
-      // Admin createUser surfaces "already been registered" etc. here --
-      // pass it straight through, it's already a clear message.
+      // An earlier attempt may have created the account and then failed at
+      // the "send code" step, leaving it UNCONFIRMED. Reuse that account
+      // (refresh its password/details) so the user can retry with the same
+      // email. A CONFIRMED account is never touched -- still "already
+      // registered". The code goes to the email owner, so this can't be used
+      // to take over someone else's address.
+      if (/already|registered|exists/i.test(error.message)) {
+        const target = email.trim().toLowerCase();
+        for (let page = 1; page <= 10; page++) {
+          const { data: list } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+          const users = list?.users ?? [];
+          const found = users.find((u) => u.email?.toLowerCase() === target);
+          if (found) {
+            if (found.email_confirmed_at) break; // real account -> normal error below
+            await supabase.auth.admin.updateUserById(found.id, {
+              password,
+              user_metadata: {
+                full_name: fullName.trim(),
+                phone: phone?.trim() ?? "",
+                referred_by: referredBy?.trim() ?? "",
+                nin: nin?.trim() ?? "",
+              },
+            });
+            return json({ userId: found.id });
+          }
+          if (users.length < 1000) break;
+        }
+      }
       return json({ error: error.message }, { status: 400 });
     }
 
